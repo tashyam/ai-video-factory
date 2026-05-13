@@ -6,22 +6,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
 
-      - name: Setup FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
-      - name: Run Engine
+      - name: Run Factory
         run: php engine.php
 
-      - name: Upload Video
+      - name: Upload Masterpiece
+        if: always() # This ensures we see the log even if it fails
         uses: actions/upload-artifact@v4
         with:
-          name: my-final-video
+          name: completed-video
           path: ./*.mp4
-          if-no-files-found: error

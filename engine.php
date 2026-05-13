@@ -1,51 +1,48 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+echo "--- 🚀 STARTING PERMANENT AUTOMATION ENGINE ---\n";
 
-echo "--- STARTING CLOUD GENERATION ---\n";
-
-// 1. AUDIO GENERATION
+// 1. STORY & AUDIO (STABLE METHOD)
 $text = "He found a black coin. It felt warm. He flipped it. Heads he gained a million. Tails he lost a year. He kept flipping. He got richer. But his hair turned grey. His skin wrinkled. One last flip. He won the gold. But he was too old to hold it. He closed his eyes. The coin vanished.";
-$audio_url = "https://translate.google.com/translate_tts?ie=UTF-8&q=" . urlencode($text) . "&tl=en&client=tw-ob";
+file_put_contents("story.txt", $text);
 
-echo "Generating Audio... ";
-$ch = curl_init($audio_url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
-$audio_data = curl_exec($ch);
-curl_close($ch);
+echo "Generating Stable Audio... ";
+// We use 'espeak' which is a local Linux tool - No internet/blocking possible
+exec("espeak -f story.txt -w audio.wav && ffmpeg -i audio.wav -codec:a libmp3lame -qscale:a 2 audio.mp3 2>&1", $audio_log);
 
-if($audio_data) {
-    file_put_contents("audio.mp3", $audio_data);
-    echo "✅\n";
+if(file_exists("audio.mp3") && filesize("audio.mp3") > 5000) {
+    echo "✅ Success.\n";
 } else {
-    die("❌ Audio Generation Failed. Stopping to save credits.");
+    echo "⚠️ Audio failed. Creating emergency silence.\n";
+    exec("ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 30 audio.mp3");
 }
 
-// 2. IMAGE DOWNLOADER
+// 2. IMAGE DOWNLOADER (WITH SMART BACKUP)
 $prompts = ["young man finding coin", "glowing coin macro", "man flipping coin", "stacks of money", "grey hair man mirror", "coin spinning blur", "old man face wrinkles", "gold bars treasure", "old man throne", "hand flipping coin", "old man closing eyes", "dust vanishing"];
 
 for ($i = 1; $i <= 12; $i++) {
     $file = "p$i.jpg";
-    if (file_exists($file) && filesize($file) > 10000) {
-        echo "Scene $i: ✅ Existing.\n";
-        continue;
-    }
-    $url = "https://image.pollinations.ai/prompt/" . urlencode($prompts[$i-1] . ", 3d render, 9:16") . "?nologo=true&seed=" . rand(1, 999);
-    echo "Downloading Scene $i... ";
+    $img_prompt = urlencode($prompts[$i-1] . ", 3d render, high quality, 9:16");
+    $url = "https://image.pollinations.ai/prompt/{$img_prompt}?nologo=true&seed=" . rand(1, 9999);
+    
+    echo "Scene $i: ";
     $data = @file_get_contents($url);
-    if ($data) {
+    if ($data && strlen($data) > 10000) {
         file_put_contents($file, $data);
-        echo "✅. Waiting 30s...\n";
+        echo "✅ Downloaded. Waiting 30s...\n";
         sleep(30);
     } else {
-        echo "⚠️ Busy. Copying p1.\n";
-        copy("p1.jpg", $file);
+        echo "⚠️ Server Busy. Using placeholder.\n";
+        // If p1 exists, copy it. If not, we download a basic black background so FFmpeg won't fail.
+        if (file_exists("p1.jpg")) {
+            copy("p1.jpg", $file);
+        } else {
+            file_put_contents($file, file_get_contents("https://image.pollinations.ai/prompt/black_background?nologo=true"));
+        }
     }
 }
 
-// 3. FFMPEG RENDER
-echo "Starting Final Render...\n";
+// 3. MASTER RENDER (THE ASSEMBLY)
+echo "🎬 Building Masterpiece...\n";
 $inputs = "";
 for($j=1; $j<=12; $j++) { $inputs .= "-loop 1 -t 2.5 -i p$j.jpg "; }
 
@@ -55,15 +52,14 @@ for($k=0; $k<12; $k++) {
 }
 $filter .= "[v0][v1][v2][v3][v4][v5][v6][v7][v8][v9][v10][v11]concat=n=12:v=1:a=0[v]\"";
 
-// THE FIX: We use a more direct shell command for GitHub Linux
-$full_cmd = "ffmpeg -y $inputs -i audio.mp3 $filter -map '[v]' -map 12:a -c:v libx264 -preset ultrafast -pix_fmt yuv420p -shortest final_video.mp4 2>&1";
+$cmd = "ffmpeg -y $inputs -i audio.mp3 $filter -map '[v]' -map 12:a -c:v libx264 -preset ultrafast -pix_fmt yuv420p -shortest final_video.mp4 2>&1";
 
-echo "Running Command...\n";
-passthru($full_cmd); // This will stream the FFmpeg progress directly to the GitHub log
+echo "Rendering... ";
+passthru($cmd);
 
 if(file_exists("final_video.mp4")) {
-    echo "\n🚀 SUCCESS! Video file created.\n";
+    echo "\n🏆 ALL DONE! DOWNLOAD YOUR VIDEO BELOW.\n";
 } else {
-    echo "\n❌ ERROR: Video file was not created.\n";
+    echo "\n❌ Render Failed. Check logs above.\n";
 }
 ?>

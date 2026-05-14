@@ -1,69 +1,86 @@
 <?php
-echo "--- 🤖 STARTING FULLY AUTONOMOUS ENGINE ---\n";
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
-// --- 1. AI STORY GENERATION (The "Magic" Part) ---
+echo "--- 🤖 STARTING SUPREME INDIAN STORY ENGINE ---\n";
+
+// 1. AI STORY GENERATION
 echo "AI is writing a new story... ";
-// We use a free text-generation API (Pollinations Text)
-$system_prompt = "Write a creepy, high-retention 12-sentence story for a YouTube Short. No intro, just the story. Each sentence should be a new scene.";
-$api_url = "https://text.pollinations.ai/" . urlencode($system_prompt);
+$topic = ["cursed antique", "glitch in reality", "mysterious forest", "abandoned hospital", "dark sea secret", "haunted haveli", "urban legend"][rand(0,6)];
+$sys = "Write a creepy 12-sentence story about a $topic. No intro, no titles. Just the story. Each sentence is a scene.";
+$text = @file_get_contents("https://text.pollinations.ai/" . urlencode($sys));
 
-$generated_text = @file_get_contents($api_url);
-
-if ($generated_text && strlen($generated_text) > 100) {
-    $text = $generated_text;
-    echo "✅ Story Created.\n";
-} else {
-    // Fallback if the AI is busy
+if (!$text || strlen($text) < 100) {
     $text = "He found a black coin. It felt warm. He flipped it. Heads he gained a million. Tails he lost a year. He kept flipping. He got richer. But his hair turned grey. His skin wrinkled. One last flip. He won the gold. But he was too old to hold it. He closed his eyes. The coin vanished.";
-    echo "⚠️ Using fallback story.\n";
+    echo "⚠️ Using backup story.\n";
+} else {
+    echo "✅ Story Created.\n";
 }
 
-// --- 2. HIGH-QUALITY AUDIO CHUNKING ---
-echo "Generating Audio... ";
+// 2. HIGH-QUALITY INDIAN ENGLISH AUDIO
+echo "Generating Indian English Audio... ";
 $sentences = explode(".", $text);
-$combined_audio = "";
+$sentences = array_filter(array_map('trim', $sentences));
+$audio_data = "";
 
-foreach($sentences as $sentence) {
-    if(trim($sentence) == "") continue;
-    $audio_url = "https://translate.google.com/translate_tts?ie=UTF-8&q=" . urlencode(trim($sentence)) . "&tl=en&client=tw-ob";
-    
-    $ch = curl_init($audio_url);
+foreach($sentences as $s) {
+    if(empty($s)) continue;
+    // Using 'en-IN' for Indian English accent
+    $url = "https://translate.google.com/translate_tts?ie=UTF-8&q=" . urlencode($s) . "&tl=en-IN&client=tw-ob";
+    $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
-    $combined_audio .= curl_exec($ch);
+    $audio_data .= curl_exec($ch);
     curl_close($ch);
-    usleep(300000); 
+    usleep(200000); 
 }
-file_put_contents("audio.mp3", $combined_audio);
-echo "✅ Done.\n";
+file_put_contents("audio.mp3", $audio_data);
+echo "✅ Audio Ready.\n";
 
-// --- 3. IMAGE DOWNLOADER (Using the AI's own words) ---
-for ($i = 1; $i <= 12; $i++) {
+// 3. DYNAMIC IMAGE DOWNLOADER
+$prompts = array_values($sentences);
+$total_scenes = count($prompts);
+for ($i = 1; $i <= $total_scenes; $i++) {
     $file = "p$i.jpg";
-    $scene_prompt = isset($sentences[$i-1]) ? trim($sentences[$i-1]) : "creepy cinematic atmosphere";
-    $url = "https://image.pollinations.ai/prompt/" . urlencode($scene_prompt . ", cinematic 3d, horror style, 9:16") . "?nologo=true&seed=" . rand(1, 9999);
+    $p_text = trim($prompts[$i-1]);
+    $url = "https://image.pollinations.ai/prompt/" . urlencode($p_text . ", cinematic 3d, horror, 9:16") . "?nologo=true&seed=" . rand(1, 9999);
     
-    echo "Downloading Scene $i... ";
+    echo "Scene $i: ";
     $data = @file_get_contents($url);
-    if ($data) {
+    if ($data && strlen($data) > 10000) {
         file_put_contents($file, $data);
-        echo "✅. Waiting 35s...\n";
-        sleep(35);
+        echo "✅ (Wait 30s)\n";
+        sleep(30);
     } else {
-        echo "⚠️ Copying p1.\n";
-        copy("p1.jpg", $file);
+        echo "⚠️ Copying backup.\n";
+        if($i > 1) copy("p1.jpg", $file);
     }
 }
 
-// --- 4. THE ASSEMBLY ---
-echo "Final Rendering...\n";
+// 4. THE ASSEMBLY (DYNAMIC LENGTH)
+echo "🎬 Building Masterpiece...\n";
+// Get the actual duration of the audio file
+$audio_duration = shell_exec("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 audio.mp3");
+$scene_duration = (float)$audio_duration / $total_scenes;
+
 $inputs = "";
-for($j=1; $j<=12; $j++) { $inputs .= "-loop 1 -t 2.5 -i p$j.jpg "; }
+for($j=1; $j<=$total_scenes; $j++) { $inputs .= "-loop 1 -t $scene_duration -i p$j.jpg "; }
+
 $filter = "-filter_complex \"";
-for($k=0; $k<12; $k++) { 
+for($k=0; $k<$total_scenes; $k++) { 
     $filter .= "[$k:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[v$k];"; 
 }
-$filter .= "[v0][v1][v2][v3][v4][v5][v6][v7][v8][v9][v10][v11]concat=n=12:v=1:a=0[v]\"";
-$cmd = "ffmpeg -y $inputs -i audio.mp3 $filter -map '[v]' -map 12:a -c:v libx264 -preset ultrafast -pix_fmt yuv420p -shortest final_video.mp4 2>&1";
-passthru($cmd);
+$concat_parts = "";
+for($l=0; $l<$total_scenes; $l++) { $concat_parts .= "[v$l]"; }
+$filter .= $concat_parts . "concat=n=$total_scenes:v=1:a=0[v]\"";
+
+$final_cmd = "ffmpeg -y $inputs -i audio.mp3 $filter -map '[v]' -map $total_scenes:a -c:v libx264 -preset ultrafast -pix_fmt yuv420p final_video.mp4 2>&1";
+
+passthru($final_cmd);
+
+if(file_exists("final_video.mp4")) {
+    echo "\n🏆 SUCCESS! Your Indian AI Story is ready.";
+} else {
+    echo "\n❌ CRITICAL ERROR: FFmpeg did not create the file.";
+}
 ?>

@@ -37,8 +37,9 @@ jobs:
         run: |
           cd 3d-video-studio
           bash setup.sh
-      - name: Install Chromium OS Libraries
+      - name: Link Engine Node Modules & Install OS Deps
         run: |
+          ln -sfn "$(pwd)/3d-video-studio/kit/node_modules" 3d-video-studio/engine/node_modules
           cd 3d-video-studio/kit
           npx playwright install-deps chromium
       - name: Generate & Render 3D Video

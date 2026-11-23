@@ -32,8 +32,7 @@ def groq_chat(prompt, json_mode=False):
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.75
     }
-    if json_mode:
-        body["response_format"] = {"type": "json_object"}
+
     r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={
@@ -46,7 +45,12 @@ def groq_chat(prompt, json_mode=False):
     )
     if not r.ok:
         raise RuntimeError(f"Groq API {r.status_code}: {r.text}")
-    return r.json()["choices"][0]["message"]["content"]
+    txt = r.json()["choices"][0]["message"]["content"].strip()
+    if json_mode:
+        start, end = txt.find("{"), txt.rfind("}")
+        if start != -1 and end != -1:
+            txt = txt[start:end+1]
+    return txt
 
 def pick_topic():
     if RAW_TOPIC and RAW_TOPIC.lower() != "auto":

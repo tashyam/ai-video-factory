@@ -22,7 +22,7 @@ jobs:
           python-version: '3.11'
       - name: Install System Deps & Python Libs
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2
+          sudo apt-get update && sudo apt-get install -y ffmpeg
           pip install edge-tts requests
       - name: Cache 3D Engine & Chromium
         id: cache-3d
@@ -37,6 +37,10 @@ jobs:
         run: |
           cd 3d-video-studio
           bash setup.sh
+      - name: Install Chromium OS Libraries
+        run: |
+          cd 3d-video-studio/kit
+          npx playwright install-deps chromium
       - name: Generate & Render 3D Video
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

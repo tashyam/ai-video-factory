@@ -28,8 +28,9 @@ jobs:
             3d-video-studio/kit
             ~/.cache/ms-playwright
           key: 3d-studio-v2-${{ hashFiles('3d-video-studio/setup.sh') }}
-      - name: Install Engine & Python Libs
+      - name: Install FFmpeg, Engine & Python Libs
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           pip install -q edge-tts requests
           if [ "${{ steps.cache-3d.outputs.cache-hit }}" != "true" ]; then
             cd 3d-video-studio && bash setup.sh && cd ..

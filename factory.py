@@ -236,7 +236,7 @@ def main():
     print(f"Selected topic: {topic}")
     proj = "3d-video-studio/project_out"
     subprocess.run(["rm", "-rf", proj], check=True)
-    subprocess.run(["cp", "-r", "3d-video-studio/_engine/template", proj], check=True)
+    subprocess.run(["cp", "-r", "3d-video-studio/engine/template", proj], check=True)
     os.makedirs(f"{proj}/audio", exist_ok=True)
     os.makedirs(f"{proj}/out", exist_ok=True)
 

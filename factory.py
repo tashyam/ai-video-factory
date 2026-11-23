@@ -128,13 +128,13 @@ async def build_voice(sentences, wav_path, words_path):
     raise RuntimeError("edge-tts failed after 6 retries across 4 voices")
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
-    js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '/engine/core.js';
-import {{ makeStage }} from '/engine/stage.js';
-import {{ addHighway }} from '/engine/sets/highway.js';
-import {{ addRoom }} from '/engine/sets/room.js';
-import {{ makeChar, pose, exprAt, talkAt }} from '/engine/chars.js';
-import {{ makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV }} from '/engine/cars.js';
-import {{ captionsFromWords, sentenceStarts }} from '/engine/captions.js';
+    js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '/_engine/core.js';
+import {{ makeStage }} from '/_engine/stage.js';
+import {{ addHighway }} from '/_engine/sets/highway.js';
+import {{ addRoom }} from '/_engine/sets/room.js';
+import {{ makeChar, pose, exprAt, talkAt }} from '/_engine/chars.js';
+import {{ makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV }} from '/_engine/cars.js';
+import {{ captionsFromWords, sentenceStarts }} from '/_engine/captions.js';
 import CAST from './cast.json' with {{ type: 'json' }};
 import WORDS from './audio/vo.words.json' with {{ type: 'json' }};
 

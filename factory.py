@@ -94,22 +94,38 @@ def parse_script_lines(raw_text, topic):
     return title, hashtags, sentences[:19]
 
 async def build_voice(sentences, wav_path, words_path):
-    full_text = " ".join(sentences)
-    communicate = edge_tts.Communicate(full_text, "en-US-AndrewMultilingualNeural", rate="+6%")
+    import re
+    clean_sentences = [re.sub(r"[^a-zA-Z0-9.,!?'\s-]", "", s).strip() for s in sentences]
+    full_text = " ".join([s for s in clean_sentences if s])
     mp3_path = wav_path.replace(".wav", ".mp3")
-    words = []
-    with open(mp3_path, "wb") as f:
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                f.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
-                t0 = round(chunk["offset"] / 10_000_000, 3)
-                t1 = round((chunk["offset"] + chunk["duration"]) / 10_000_000, 3)
-                words.append([t0, t1, chunk["text"]])
-    subprocess.run(["ffmpeg", "-y", "-i", mp3_path, "-ar", "24000", "-ac", "1", wav_path], check=True)
-    with open(words_path, "w") as f:
-        json.dump(words, f)
-    return words[-1][1] if words else 55.0
+    voices = ["en-US-GuyNeural", "en-US-AndrewMultilingualNeural", "en-US-ChristopherNeural", "en-US-AriaNeural"]
+    for attempt in range(6):
+        voice = voices[attempt % len(voices)]
+        words = []
+        try:
+            communicate = edge_tts.Communicate(full_text, voice)
+            with open(mp3_path, "wb") as f:
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        f.write(chunk["data"])
+                    elif chunk["type"] == "WordBoundary":
+                        t0 = round(chunk["offset"] / 10_000_000, 3)
+                        t1 = round((chunk["offset"] + chunk["duration"]) / 10_000_000, 3)
+                        words.append([t0, t1, chunk["text"]])
+            if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
+                subprocess.run(["ffmpeg", "-y", "-i", mp3_path, "-ar", "24000", "-ac", "1", wav_path], check=True)
+                if not words:
+                    raw_words = full_text.split()
+                    step = 0.28
+                    words = [[round(i * step, 3), round((i + 1) * step, 3), w] for i, w in enumerate(raw_words)]
+                with open(words_path, "w") as f:
+                    json.dump(words, f)
+                print(f"TTS succeeded with {voice} ({words[-1][1]}s)")
+                return words[-1][1]
+        except Exception as e:
+            print(f"TTS attempt {attempt+1} ({voice}) failed: {e}")
+            await asyncio.sleep(2 ** min(attempt, 3))
+    raise RuntimeError("edge-tts failed after 6 retries across 4 voices")
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
     js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '/engine/core.js';

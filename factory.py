@@ -1,4 +1,4 @@
-import os, sys, json, asyncio, subprocess, random, requests
+import os, sys, json, time, asyncio, subprocess, random, requests
 import edge_tts
 
 GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
@@ -19,38 +19,42 @@ CURIOSITY_TOPICS = [
     "Why hotels started putting tiny peepholes in every door"
 ]
 
-def groq_chat(prompt, json_mode=False):
+def groq_chat(prompt):
     if not GROQ_KEY:
         raise RuntimeError("GROQ_API_KEY secret is empty!")
-    models = [m["id"] for m in requests.get(
-        "https://api.groq.com/openai/v1/models",
-        headers={"Authorization": f"Bearer {GROQ_KEY}"}
-    ).json().get("data", []) if not any(x in m["id"] for x in ["whisper", "tts", "guard", "embed"])]
-    model = next((m for m in ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b", "llama-3.1-8b-instant"] if m in models), models[0])
-    body = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.75
+    headers = {
+        "Authorization": f"Bearer {GROQ_KEY}",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; VideoFactory/1.0)"
     }
+    models_resp = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=30).json()
+    available = [m["id"] for m in models_resp.get("data", [])]
+    # Strictly avoid reasoning models (gpt-oss, qwen3, r1) that return empty content
+    blocked = ("whisper", "tts", "guard", "embed", "oss", "qwen3", "r1", "vision", "preview")
+    instruct = [m for m in available if not any(b in m.lower() for b in blocked)]
+    preferred = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192", "gemma2-9b-it"]
+    model = next((m for m in preferred if m in instruct), instruct[0] if instruct else available[0])
+    print(f"Using Groq model: {model}")
 
-    r = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {GROQ_KEY}",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; VideoFactory/1.0)"
-        },
-        json=body,
-        timeout=60
-    )
-    if not r.ok:
-        raise RuntimeError(f"Groq API {r.status_code}: {r.text}")
-    txt = r.json()["choices"][0]["message"]["content"].strip()
-    if json_mode:
-        start, end = txt.find("{"), txt.rfind("}")
-        if start != -1 and end != -1:
-            txt = txt[start:end+1]
-    return txt
+    for attempt in range(3):
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": 1500
+            },
+            timeout=60
+        )
+        if r.ok:
+            content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            if content:
+                return content
+        print(f"Retry {attempt+1} (status {r.status_code})...")
+        time.sleep(3)
+    raise RuntimeError(f"Groq failed after 3 attempts: {r.status_code} {r.text}")
 
 def pick_topic():
     if RAW_TOPIC and RAW_TOPIC.lower() != "auto":
@@ -58,18 +62,28 @@ def pick_topic():
     used_file = "used_topics.json"
     used = json.load(open(used_file)) if os.path.exists(used_file) else []
     remaining = [t for t in CURIOSITY_TOPICS if t not in used]
-    if not remaining:
-        ask = f"""Generate 1 viral YouTube Shorts curiosity-gap title following the exact pattern:
-'Why [everyday group] started [weird behavior]' (never name the invention).
-Do NOT repeat any of these: {json.dumps(used)}.
-Return ONLY JSON: {{"topic": "..."}}"""
-        topic = json.loads(groq_chat(ask, json_mode=True))["topic"]
-    else:
-        topic = random.choice(remaining)
+    topic = random.choice(remaining if remaining else CURIOSITY_TOPICS)
     used.append(topic)
     with open(used_file, "w") as f:
-        json.dump(used, f, indent=2)
+        json.dump(used[-50:], f, indent=2)
     return topic
+
+def parse_script_lines(raw_text, topic):
+    lines = [ln.strip().lstrip("-•*0123456789. ") for ln in raw_text.splitlines() if ln.strip()]
+    title = topic
+    hashtags = "#shorts #animation #history #didyouknow"
+    sentences = []
+    for ln in lines:
+        low = ln.lower()
+        if low.startswith("title:"):
+            title = ln.split(":", 1)[1].strip().strip('"')
+        elif low.startswith("tags:") or low.startswith("hashtags:"):
+            hashtags = ln.split(":", 1)[1].strip()
+        elif not ln.startswith("{") and not ln.startswith("}") and not ln.startswith("```"):
+            sentences.append(ln.strip('"'))
+    if len(sentences) < 8:
+        raise RuntimeError(f"Too few sentences parsed from Groq output:\n{raw_text}")
+    return title, hashtags, sentences[:19]
 
 async def build_voice(sentences, wav_path, words_path):
     full_text = " ".join(sentences)
@@ -89,6 +103,114 @@ async def build_voice(sentences, wav_path, words_path):
         json.dump(words, f)
     return words[-1][1] if words else 55.0
 
+def build_deterministic_video_js(proj, num_sentences, total_dur):
+    # Deterministic, crash-proof Three.js scene choreography synced to every spoken sentence
+    js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '../engine/core.js';
+import {{ makeStage }} from '../engine/stage.js';
+import {{ addHighway }} from '../engine/sets/highway.js';
+import {{ addRoom }} from '../engine/sets/room.js';
+import {{ makeChar, pose, exprAt, talkAt }} from '../engine/chars.js';
+import {{ makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV }} from '../engine/cars.js';
+import {{ captionsFromWords, sentenceStarts }} from '../engine/captions.js';
+import CAST from './cast.json' with {{ type: 'json' }};
+import WORDS from './audio/vo.words.json' with {{ type: 'json' }};
+
+const S = sentenceStarts(WORDS);
+const TOTAL = Math.max({total_dur:.2f}, (WORDS.at(-1)?.[1] || 50) + 1.2);
+const N = S.length;
+const tAt = (i) => i < N ? S[i] : TOTAL;
+
+// Act 1: Highway / Street Setup
+const st1 = makeStage({{ mood: 'day' }});
+addHighway(st1.scene);
+const carA = makeCar(COUPE, 0xffbf0a); addInterior(carA, CAST.cars.schemer.interior, true); st1.scene.add(carA);
+const carB = makeCar(SUV, 0xbfe9dc); addInterior(carB, false, false); st1.scene.add(carB);
+const schemer1 = makeChar(CAST.characters.schemer); carA.body.add(schemer1);
+const victim1 = makeChar(CAST.characters.victim); carB.body.add(victim1);
+
+function updateAct1(t) {{
+  const x = t * 14;
+  carA.position.set(x, 0, 5.55);
+  carB.position.set(x - 9.5 + Math.sin(t * 2.2) * 1.4, 0, 5.55);
+  rollWheels(carA, x); rollWheels(carB, x);
+  brakeLights(carA, Math.sin(t * 3) > 0.2);
+  const camSide = Math.floor(t / 3.2) % 2 === 0;
+  if (camSide) {{
+    st1.camera.position.set(x + 0.35, 1.28, 5.55 - 0.38);
+    st1.camera.lookAt(x + 0.15, 1.18, 5.55 + 0.2);
+  }} else {{
+    st1.camera.position.set(x - 4.5, 2.2 + 0.15 * Math.sin(t), 5.55 - 3.6);
+    st1.camera.lookAt(x - 2.0, 1.1, 5.55);
+  }}
+  st1.frame(); st1.follow(x - 4, 0, 5.55);
+  pose(schemer1, {{ hip: V3(-0.2, 0.53, -0.30), neck: V3(-0.18, 0.83, -0.30), face: schemer1.headWorld(), expr: exprAt([[0,'smug'],[3,'grin'],[6,'jolt']], t),
+    arms: [[V3(0.12, 0.62, -0.58), V3(0.28, 0.72, -0.52)], [V3(0.12, 0.62, -0.16), V3(0.28, 0.72, -0.22)]],
+    legs: [[V3(0.06, 0.40, -0.50), V3(0.45, 0.20, -0.52)], [V3(0.06, 0.40, -0.36), V3(0.45, 0.20, -0.34)]] }}, st1.camera);
+  pose(victim1, {{ hip: V3(-0.22, 0.88, -0.40), neck: V3(-0.20, 1.18, -0.40), face: victim1.headWorld(), expr: exprAt([[0,'calm'],[4,'shock'],[8,'dazed']], t),
+    arms: [[V3(0.08, 0.95, -0.65), V3(0.26, 1.05, -0.58)], [V3(0.08, 0.95, -0.15), V3(0.26, 1.05, -0.22)]],
+    legs: [[V3(0.05, 0.72, -0.55), V3(0.42, 0.50, -0.55)], [V3(0.05, 0.72, -0.25), V3(0.42, 0.50, -0.25)]] }}, st1.camera);
+}}
+
+// Act 2: Indoor Office / Investigation Escalation
+const st2 = makeStage({{ mood: 'dusk' }});
+const room2 = addRoom(st2.scene, {{ kind: 'office' }});
+const schemer2 = makeChar(CAST.characters.schemer); st2.scene.add(schemer2);
+const officer2 = makeChar(CAST.characters.officer); st2.scene.add(officer2);
+
+function updateAct2(t) {{
+  const push = (t % 4.0) * 0.14;
+  const flip = Math.floor(t / 3.5) % 2 === 0;
+  if (flip) {{
+    st2.camera.position.set(-0.9, 1.48, 2.35 - push);
+    st2.camera.lookAt(-0.75, 1.32, 0.2);
+  }} else {{
+    st2.camera.position.set(0.95, 1.52, 2.35 - push);
+    st2.camera.lookAt(0.75, 1.35, 0.2);
+  }}
+  st2.frame();
+  pose(schemer2, {{ hip: V3(-0.85, 0.92, 0.2), neck: V3(-0.85, 1.24, 0.2), face: schemer2.headWorld(), expr: exprAt([[0,'smug'],[5,'worried'],[10,'panic']], t),
+    arms: [[V3(-1.05, 1.15, 0.2), V3(-0.65, 1.05, 0.45)], [V3(-0.65, 1.15, 0.2), V3(-0.45, 1.10, 0.45)]],
+    legs: [[V3(-0.95, 0.52, 0.2), V3(-0.95, 0.05, 0.22)], [V3(-0.75, 0.52, 0.2), V3(-0.75, 0.05, 0.18)]] }}, st2.camera);
+  pose(officer2, {{ hip: V3(0.85, 0.96, 0.2), neck: V3(0.85, 1.30, 0.2), face: officer2.headWorld(), expr: exprAt([[0,'stern'],[6,'angry'],[12,'grin']], t),
+    arms: [[V3(0.65, 1.20, 0.2), V3(0.45, 1.18, 0.48)], [V3(1.05, 1.20, 0.2), V3(1.12, 0.95, 0.25)]],
+    legs: [[V3(0.75, 0.54, 0.2), V3(0.75, 0.05, 0.2)], [V3(0.95, 0.54, 0.2), V3(0.95, 0.05, 0.2)]] }}, st2.camera);
+}}
+
+// Act 3: Rainy Night Reveal & Tag
+const st3 = makeStage({{ mood: 'rain' }});
+addHighway(st3.scene, {{ wet: true }});
+const carC = makeCar(SUV, 0x3b82f6); addInterior(carC, true, true); st3.scene.add(carC);
+const quiet3 = makeChar(CAST.characters.quiet); carC.body.add(quiet3);
+
+function updateAct3(t) {{
+  const x = t * 11;
+  carC.position.set(x, 0, 1.85);
+  rollWheels(carC, x);
+  st3.camera.position.set(x + 0.28, 1.36, 1.85 - 0.34);
+  st3.camera.lookAt(x + 0.85, 1.28, 1.85 + 0.12);
+  st3.frame(); st3.follow(x - 3, 0, 1.85);
+  pose(quiet3, {{ hip: V3(-0.22, 0.88, -0.40), neck: V3(-0.20, 1.18, -0.40), face: quiet3.headWorld(), expr: exprAt([[0,'calm'],[4,'innocent'],[8,'grin']], t),
+    arms: [[V3(0.08, 0.95, -0.65), V3(0.32, 1.15, -0.42)], [V3(0.08, 0.95, -0.15), V3(0.28, 1.05, -0.22)]],
+    legs: [[V3(0.05, 0.72, -0.55), V3(0.42, 0.50, -0.55)], [V3(0.05, 0.72, -0.25), V3(0.42, 0.50, -0.25)]] }}, st3.camera);
+}}
+
+const cut1 = tAt(Math.max(1, Math.floor(N * 0.38)));
+const cut2 = tAt(Math.max(2, Math.floor(N * 0.72)));
+
+run({{
+  shots: [
+    {{ start: 0, end: cut1, stage: st1, update: updateAct1, grade: st1.grade, type: 'interior', dof: {{ clnf: 0, focus: 2 }} }},
+    {{ start: cut1, end: cut2, stage: st2, update: updateAct2, grade: st2.grade, type: 'twoshot', dof: {{ clnf: 0, focus: 2 }} }},
+    {{ start: cut2, end: TOTAL, stage: st3, update: updateAct3, grade: st3.grade, type: 'interior', dof: {{ clnf: 0, focus: 2 }} }}
+  ],
+  captions: captionsFromWords(WORDS),
+  sound: [],
+  music: []
+}});
+"""
+    with open(f"{proj}/video.js", "w") as f:
+        f.write(js)
+
 def main():
     topic = pick_topic()
     print(f"Selected topic: {topic}")
@@ -98,21 +220,23 @@ def main():
     os.makedirs(f"{proj}/audio", exist_ok=True)
     os.makedirs(f"{proj}/out", exist_ok=True)
 
-    with open("3d-video-studio/story/script-template.md") as f:
-        tpl = f.read()
-    with open("3d-video-studio/engine/API.md") as f:
-        api_doc = f.read()
+    script_prompt = f"""Write a 60-second funny, fast-paced fake-origin YouTube Shorts narration about: "{topic}".
+Rules:
+- Hook in sentence 1: past tense, a bold schemer pulls a clever scam/loophole.
+- Middle: he repeats it, escalates, makes easy money, until a quiet ordinary person uses a simple everyday object that ruins the whole trick.
+- Reveal at the end: name the everyday invention humbly ("...and that's how the [invention] was invented.").
+- Short punchy visual sentences (8 to 14 words each). No bullet symbols, no scene directions, no JSON.
+Output format (strictly plain text lines):
+TITLE: <Curiosity-gap Shorts YouTube invention naming the title without>
+TAGS: <4 viral hashtags>
+<Sentence 1>
+<Sentence 2>
+... (15 to 18 sentences total)"""
 
-    script_prompt = f"""Write a 60-second viral comedy fake-origin script about: "{topic}".
-Follow this exact structure & rules:
-{tpl}
-Return ONLY valid JSON: {{
-  "title": "Curiosity-gap YouTube Shorts title (never name the invention)",
-  "description": "2-line engaging YouTube Shorts description with 4 viral hashtags",
-  "sentences": ["sentence 1", "sentence 2", "..."]
-}} (16 to 19 short punchy sentences, ~230 words total)."""
-    script_data = json.loads(groq_chat(script_prompt, json_mode=True))
-    sentences = script_data["sentences"]
+    raw_script = groq_chat(script_prompt)
+    title, hashtags, sentences = parse_script_lines(raw_script, topic)
+    print(f"Generated title: {title} ({len(sentences)} sentences)")
+
     with open(f"{proj}/script.json", "w") as f:
         json.dump(sentences, f, indent=2)
 
@@ -122,21 +246,7 @@ Return ONLY valid JSON: {{
                     "--chars", "schemer,quiet,victim,officer",
                     "--cars", "schemer,quiet,traffic"], check=True)
 
-    code_prompt = f"""You are writing `video.js` for a Three.js 3D animated Short.
-Total duration: {dur:.2f} seconds across {len(sentences)} sentences: {json.dumps(sentences)}
-Engine API reference:
-{api_doc[:11000]}
-
-Write a complete, valid ES module `video.js` that:
-1. Imports `run`, `track`, `V3`, `DEG`, `ease`, `clamp` from '../engine/core.js', `makeStage` from '../engine/stage.js', `addHighway` from '../engine/sets/highway.js', `addRoom` from '../engine/sets/room.js', `makeChar`, `pose`, `exprAt`, `talkAt` from '../engine/chars.js', `makeCar`, `addInterior`, `rollWheels` from '../engine/cars.js', `captionsFromWords`, `sentenceStarts` from '../engine/captions.js', and `CAST` from './cast.json' with `{{ type: 'json' }}` and `WORDS` from './audio/vo.words.json' with `{{ type: 'json' }}`.
-2. Builds 3 mood acts (`day`, `dusk`, `rain`) with `makeStage`, `addHighway` / `addRoom`, `makeChar` + `pose` + `talkAt` + `exprAt` for all {len(sentences)} sentence shots synced via `sentenceStarts(WORDS)`.
-3. Calls `run({{ shots, captions: captionsFromWords(WORDS), sound: [], music: [] }})`.
-Output ONLY raw JavaScript code (no markdown fences)."""
-    video_js = groq_chat(code_prompt).strip()
-    if video_js.startswith("```"):
-        video_js = "\n".join(video_js.split("\n")[1:-1])
-    with open(f"{proj}/video.js", "w") as f:
-        f.write(video_js)
+    build_deterministic_video_js(proj, len(sentences), dur)
 
     subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4"], check=True)
     final_mp4 = f"{proj}/out/final_short.mp4"
@@ -147,7 +257,7 @@ Output ONLY raw JavaScript code (no markdown fences)."""
     ], check=True)
 
     if TG_TOKEN and TG_CHAT and os.path.exists(final_mp4):
-        caption = f"🎬 {script_data.get('title', topic)}\n\n{script_data.get('description', '')}"
+        caption = f"🎬 {title}\n\n{hashtags}"
         with open(final_mp4, "rb") as vid:
             requests.post(
                 f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TG_TOKEN}/sendVideo",
@@ -155,6 +265,7 @@ Output ONLY raw JavaScript code (no markdown fences)."""
                 files={"video": vid},
                 timeout=120
             )
+        print("Sent final video to Telegram!")
 
 if __name__ == "__main__":
     main()

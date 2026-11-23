@@ -1,0 +1,8 @@
+# Keep LF everywhere: SKILL.md frontmatter must start with "---\n".
+* text=auto eol=lf
+*.ttf binary
+*.mp4 binary
+*.wav binary
+*.jpg binary
+*.png binary
+*.zip binary

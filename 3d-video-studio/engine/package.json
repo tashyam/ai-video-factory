@@ -1,0 +1,10 @@
+{
+  "name": "3d-video-studio-engine",
+  "private": true,
+  "description": "Render engine for the /3d-video-studio skill. three.js is pinned: the look was tuned on 0.187.",
+  "dependencies": {
+    "three": "0.187.0",
+    "@fontsource/poppins": "5.3.0"
+  },
+  "type": "module"
+}

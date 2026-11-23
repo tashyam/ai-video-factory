@@ -1,0 +1,31 @@
+{
+ "videos": [
+  {
+   "title": "Why Cars Started Watching The Road",
+   "date": "2026-11-13",
+   "palette": "ocean",
+   "signatures": [
+    "schemer|curly|h1",
+    "victim|side|grey",
+    "extra|buzz|h8",
+    "agent|bun|h7",
+    "buddy|bald|h5",
+    "quiet|buzz|grey",
+    "victim|long|h11",
+    "extra|afro|h6",
+    "extra|bald|h0",
+    "officer|flattop|black",
+    "schemer|sedan|h6",
+    "victim|van|white",
+    "upgrade|sports|h1",
+    "quiet|hatch|h2",
+    "buddy|suv|h7",
+    "victim|suv|h11",
+    "victim|coupe|h8",
+    "victim|sedan|h5",
+    "traffic|suv|white",
+    "traffic|van|grey"
+   ]
+  }
+ ]
+}

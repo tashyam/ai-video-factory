@@ -1,0 +1,86 @@
+{
+ "_source": "Ranges [low, high, span] per metric of tools/look_score.py: 10 inside the range, minus 10 per span outside it. indoor = measured on three interior reference frames: sat 0.43-0.59, ink (line pixels) 0.007-0.038, empty 0.06-0.26, gloss 0.066-0.112. outdoor = estimated, no outdoor frames measured. blur = share of background detail kept by the lens blur (style guide section 4: slightly soft); head = section 6. outdoor_rain = act 3 is meant to be grey (about 60 % less colour than act 1). Update with --measure when new reference frames are studied.",
+ "indoor": {
+  "sat": [
+   0.4,
+   0.65,
+   0.2
+  ],
+  "ink": [
+   0.01,
+   0.045,
+   0.008
+  ],
+  "empty": [
+   0.0,
+   0.27,
+   0.2
+  ],
+  "gloss": [
+   0.06,
+   0.13,
+   0.05
+  ],
+  "vig": [
+   0.0,
+   9,
+   1
+  ],
+  "blur": [
+   0.25,
+   0.7,
+   0.3
+  ],
+  "head": [
+   0.85,
+   1.0,
+   0.25
+  ]
+ },
+ "outdoor": {
+  "sat": [
+   0.3,
+   0.65,
+   0.2
+  ],
+  "ink": [
+   0.006,
+   0.045,
+   0.006
+  ],
+  "empty": [
+   0.0,
+   0.35,
+   0.2
+  ],
+  "vig": [
+   0.0,
+   9,
+   1
+  ],
+  "blur": [
+   0.25,
+   0.7,
+   0.3
+  ],
+  "head": [
+   0.85,
+   1.0,
+   0.25
+  ]
+ },
+ "studio": {
+  "head": [
+   0.85,
+   1.0,
+   0.25
+  ]
+ },
+ "outdoor_rain": {
+  "sat": [
+   0.12,
+   0.4,
+   0.15
+  ]
+ }
+}

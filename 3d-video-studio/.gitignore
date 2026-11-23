@@ -1,0 +1,12 @@
+node_modules
+**/out/
+**/review/
+**/check/
+*.mp4
+*.wav
+__pycache__/
+.DS_Store
+kit/.venv/
+kit/models/
+package-lock.json
+!engine/package-lock.json

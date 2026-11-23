@@ -1,0 +1,8 @@
+{
+  "name": "3d-video-studio-kit",
+  "private": true,
+  "description": "Playwright for rendering; Python venv and the word-timing model live here too (setup.sh).",
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}

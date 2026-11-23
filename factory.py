@@ -9,8 +9,10 @@ TOPIC = sys.argv[1].strip() if len(sys.argv) > 1 and sys.argv[1].strip() else "W
 def groq_chat(prompt, json_mode=False):
     if not GROQ_KEY:
         raise RuntimeError("GROQ_API_KEY secret is empty! Check Settings -> Secrets -> Actions.")
+    models = [m["id"] for m in requests.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {GROQ_KEY}"}).json().get("data", []) if not any(x in m["id"] for x in ["whisper","tts","guard","embed"])]
+    model = next((m for m in ["openai/gpt-oss-120b","llama-3.3-70b-versatile","qwen/qwen3-32b","llama-3.1-8b-instant"] if m in models), models[0])
     body = {
-        "model": "llama-3.3-70b-versatile",
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7
     }

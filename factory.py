@@ -1,20 +1,36 @@
-import os, sys, json, asyncio, subprocess, requests
+import os, sys, json, asyncio, subprocess, random, requests
 import edge_tts
 
 GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-TOPIC = sys.argv[1].strip() if len(sys.argv) > 1 and sys.argv[1].strip() else "Why drivers started filming the road"
+RAW_TOPIC = sys.argv[1].strip() if len(sys.argv) > 1 else ""
+
+CURIOSITY_TOPICS = [
+    "Why drivers started filming the road",
+    "Why banks stopped trusting handwritten signatures",
+    "Why stores started putting black stripes on every box",
+    "Why ATMs started swallowing debit cards",
+    "Why delivery drivers started taking doorway photos",
+    "Why parking lots started adding yellow speed bumps",
+    "Why taxis started mounting glowing signs on the roof",
+    "Why offices started locking doors with plastic keycards",
+    "Why gas stations started making you pay before pumping",
+    "Why hotels started putting tiny peepholes in every door"
+]
 
 def groq_chat(prompt, json_mode=False):
     if not GROQ_KEY:
-        raise RuntimeError("GROQ_API_KEY secret is empty! Check Settings -> Secrets -> Actions.")
-    models = [m["id"] for m in requests.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {GROQ_KEY}"}).json().get("data", []) if not any(x in m["id"] for x in ["whisper","tts","guard","embed"])]
-    model = next((m for m in ["openai/gpt-oss-120b","llama-3.3-70b-versatile","qwen/qwen3-32b","llama-3.1-8b-instant"] if m in models), models[0])
+        raise RuntimeError("GROQ_API_KEY secret is empty!")
+    models = [m["id"] for m in requests.get(
+        "https://api.groq.com/openai/v1/models",
+        headers={"Authorization": f"Bearer {GROQ_KEY}"}
+    ).json().get("data", []) if not any(x in m["id"] for x in ["whisper", "tts", "guard", "embed"])]
+    model = next((m for m in ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b", "llama-3.1-8b-instant"] if m in models), models[0])
     body = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
+        "temperature": 0.75
     }
     if json_mode:
         body["response_format"] = {"type": "json_object"}
@@ -31,6 +47,25 @@ def groq_chat(prompt, json_mode=False):
     if not r.ok:
         raise RuntimeError(f"Groq API {r.status_code}: {r.text}")
     return r.json()["choices"][0]["message"]["content"]
+
+def pick_topic():
+    if RAW_TOPIC and RAW_TOPIC.lower() != "auto":
+        return RAW_TOPIC
+    used_file = "used_topics.json"
+    used = json.load(open(used_file)) if os.path.exists(used_file) else []
+    remaining = [t for t in CURIOSITY_TOPICS if t not in used]
+    if not remaining:
+        ask = f"""Generate 1 viral YouTube Shorts curiosity-gap title following the exact pattern:
+'Why [everyday group] started [weird behavior]' (never name the invention).
+Do NOT repeat any of these: {json.dumps(used)}.
+Return ONLY JSON: {{"topic": "..."}}"""
+        topic = json.loads(groq_chat(ask, json_mode=True))["topic"]
+    else:
+        topic = random.choice(remaining)
+    used.append(topic)
+    with open(used_file, "w") as f:
+        json.dump(used, f, indent=2)
+    return topic
 
 async def build_voice(sentences, wav_path, words_path):
     full_text = " ".join(sentences)
@@ -51,6 +86,8 @@ async def build_voice(sentences, wav_path, words_path):
     return words[-1][1] if words else 55.0
 
 def main():
+    topic = pick_topic()
+    print(f"Selected topic: {topic}")
     proj = "3d-video-studio/project_out"
     subprocess.run(["rm", "-rf", proj], check=True)
     subprocess.run(["cp", "-r", "3d-video-studio/engine/template", proj], check=True)
@@ -62,10 +99,14 @@ def main():
     with open("3d-video-studio/engine/API.md") as f:
         api_doc = f.read()
 
-    script_prompt = f"""Write a 60-second viral comedy fake-origin script about: "{TOPIC}".
+    script_prompt = f"""Write a 60-second viral comedy fake-origin script about: "{topic}".
 Follow this exact structure & rules:
 {tpl}
-Return ONLY valid JSON: {{"title": "...", "sentences": ["sentence 1", "sentence 2", ...]}} (16 to 19 short punchy sentences, ~230 words total)."""
+Return ONLY valid JSON: {{
+  "title": "Curiosity-gap YouTube Shorts title (never name the invention)",
+  "description": "2-line engaging YouTube Shorts description with 4 viral hashtags",
+  "sentences": ["sentence 1", "sentence 2", "..."]
+}} (16 to 19 short punchy sentences, ~230 words total)."""
     script_data = json.loads(groq_chat(script_prompt, json_mode=True))
     sentences = script_data["sentences"]
     with open(f"{proj}/script.json", "w") as f:
@@ -102,10 +143,11 @@ Output ONLY raw JavaScript code (no markdown fences)."""
     ], check=True)
 
     if TG_TOKEN and TG_CHAT and os.path.exists(final_mp4):
+        caption = f"🎬 {script_data.get('title', topic)}\n\n{script_data.get('description', '')}"
         with open(final_mp4, "rb") as vid:
             requests.post(
                 f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TG_TOKEN}/sendVideo",
-                data={"chat_id": TG_CHAT, "caption": f"🎬 {script_data.get('title', TOPIC)}"},
+                data={"chat_id": TG_CHAT, "caption": caption[:1024]},
                 files={"video": vid},
                 timeout=120
             )

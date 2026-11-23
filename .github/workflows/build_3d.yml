@@ -5,7 +5,7 @@ on:
       topic:
         description: 'Video Topic (leave blank for default)'
         required: false
-        default: 'Why drivers started filming the road'
+        default: 'auto'
   schedule:
     - cron: '0 12 * * *'
 

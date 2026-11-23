@@ -262,13 +262,13 @@ TAGS: <4 viral hashtags>
 
     dur = asyncio.run(build_voice(sentences, f"{proj}/audio/vo.wav", f"{proj}/audio/vo.words.json"))
 
-    subprocess.run(["node", "3d-video-studio/_engine/cast.mjs", "new", proj,
+    subprocess.run(["node", "3d-video-studio/engine/cast.mjs", "new", proj,
                     "--chars", "schemer,quiet,victim,officer",
                     "--cars", "schemer,quiet,traffic"], check=True)
 
     build_deterministic_video_js(proj, len(sentences), dur)
 
-    subprocess.run(["node", "3d-video-studio/_engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4"], check=True)
+    subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4"], check=True)
     final_mp4 = f"{proj}/out/final_short.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-i", f"{proj}/out/silent.mp4", "-i", f"{proj}/audio/vo.wav",

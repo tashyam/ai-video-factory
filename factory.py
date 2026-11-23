@@ -29,14 +29,15 @@ def groq_chat(prompt):
     }
     models_resp = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=30).json()
     available = [m["id"] for m in models_resp.get("data", [])]
-    # Strictly avoid reasoning models (gpt-oss, qwen3, r1) that return empty content
-    blocked = ("whisper", "tts", "guard", "embed", "oss", "qwen3", "r1", "vision", "preview")
-    instruct = [m for m in available if not any(b in m.lower() for b in blocked)]
-    preferred = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama3-8b-8192", "gemma2-9b-it"]
-    model = next((m for m in preferred if m in instruct), instruct[0] if instruct else available[0])
-    print(f"Using Groq model: {model}")
+    skip = ("whisper", "tts", "guard", "embed", "orpheus", "playai", "distil-whisper", "safeguard")
+    candidates = [m for m in available if not any(s in m.lower() for s in skip)]
+    preferred = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "meta-llama/llama-4-scout-17b-16e-instruct", "qwen/qwen3-32b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    ordered = [m for m in preferred if m in candidates] + [m for m in candidates if m not in preferred]
+    print(f"Candidate Groq models: {ordered}")
 
-    for attempt in range(3):
+    last_err = ""
+    for model in ordered:
+        print(f"Trying Groq model: {model}")
         r = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers=headers,
@@ -44,17 +45,24 @@ def groq_chat(prompt):
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.7,
-                "max_tokens": 1500
+                "max_tokens": 4096
             },
             timeout=60
         )
         if r.ok:
-            content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            msg = r.json()["choices"][0]["message"]
+            content = (msg.get("content") or "").strip()
+            # Strip <think>...</think> blocks if a reasoning model responds
+            if "</think>" in content:
+                content = content.split("</think>", 1)[1].strip()
             if content:
+                print(f"Success with model: {model}")
                 return content
-        print(f"Retry {attempt+1} (status {r.status_code})...")
-        time.sleep(3)
-    raise RuntimeError(f"Groq failed after 3 attempts: {r.status_code} {r.text}")
+            last_err = f"{model} returned empty content"
+        else:
+            last_err = f"{model} -> {r.status_code}: {r.text[:160]}"
+        print(f"Skipping {last_err}")
+    raise RuntimeError(f"All Groq models failed. Last error: {last_err}")
 
 def pick_topic():
     if RAW_TOPIC and RAW_TOPIC.lower() != "auto":
@@ -104,7 +112,6 @@ async def build_voice(sentences, wav_path, words_path):
     return words[-1][1] if words else 55.0
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
-    # Deterministic, crash-proof Three.js scene choreography synced to every spoken sentence
     js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '../engine/core.js';
 import {{ makeStage }} from '../engine/stage.js';
 import {{ addHighway }} from '../engine/sets/highway.js';
@@ -120,7 +127,6 @@ const TOTAL = Math.max({total_dur:.2f}, (WORDS.at(-1)?.[1] || 50) + 1.2);
 const N = S.length;
 const tAt = (i) => i < N ? S[i] : TOTAL;
 
-// Act 1: Highway / Street Setup
 const st1 = makeStage({{ mood: 'day' }});
 addHighway(st1.scene);
 const carA = makeCar(COUPE, 0xffbf0a); addInterior(carA, CAST.cars.schemer.interior, true); st1.scene.add(carA);
@@ -151,9 +157,8 @@ function updateAct1(t) {{
     legs: [[V3(0.05, 0.72, -0.55), V3(0.42, 0.50, -0.55)], [V3(0.05, 0.72, -0.25), V3(0.42, 0.50, -0.25)]] }}, st1.camera);
 }}
 
-// Act 2: Indoor Office / Investigation Escalation
 const st2 = makeStage({{ mood: 'dusk' }});
-const room2 = addRoom(st2.scene, {{ kind: 'office' }});
+addRoom(st2.scene, {{ kind: 'office' }});
 const schemer2 = makeChar(CAST.characters.schemer); st2.scene.add(schemer2);
 const officer2 = makeChar(CAST.characters.officer); st2.scene.add(officer2);
 
@@ -176,7 +181,6 @@ function updateAct2(t) {{
     legs: [[V3(0.75, 0.54, 0.2), V3(0.75, 0.05, 0.2)], [V3(0.95, 0.54, 0.2), V3(0.95, 0.05, 0.2)]] }}, st2.camera);
 }}
 
-// Act 3: Rainy Night Reveal & Tag
 const st3 = makeStage({{ mood: 'rain' }});
 addHighway(st3.scene, {{ wet: true }});
 const carC = makeCar(SUV, 0x3b82f6); addInterior(carC, true, true); st3.scene.add(carC);
@@ -259,13 +263,13 @@ TAGS: <4 viral hashtags>
     if TG_TOKEN and TG_CHAT and os.path.exists(final_mp4):
         caption = f"🎬 {title}\n\n{hashtags}"
         with open(final_mp4, "rb") as vid:
-            requests.post(
+            resp = requests.post(
                 f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TG_TOKEN}/sendVideo",
                 data={"chat_id": TG_CHAT, "caption": caption[:1024]},
                 files={"video": vid},
                 timeout=120
             )
-        print("Sent final video to Telegram!")
+        print("Telegram response:", resp.status_code)
 
 if __name__ == "__main__":
     main()

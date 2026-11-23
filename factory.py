@@ -1,12 +1,14 @@
-import os, sys, json, asyncio, subprocess, urllib.request
+import os, sys, json, asyncio, subprocess, requests
 import edge_tts
 
-GROQ_KEY = os.environ["GROQ_API_KEY"]
-TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "")
-TOPIC = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].strip() else "Why drivers started filming the road"
+GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+TOPIC = sys.argv[1].strip() if len(sys.argv) > 1 and sys.argv[1].strip() else "Why drivers started filming the road"
 
 def groq_chat(prompt, json_mode=False):
+    if not GROQ_KEY:
+        raise RuntimeError("GROQ_API_KEY secret is empty! Check Settings -> Secrets -> Actions.")
     body = {
         "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "user", "content": prompt}],
@@ -14,13 +16,19 @@ def groq_chat(prompt, json_mode=False):
     }
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    req = urllib.request.Request(
+    r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
-        data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
+        headers={
+            "Authorization": f"Bearer {GROQ_KEY}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; VideoFactory/1.0)"
+        },
+        json=body,
+        timeout=60
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read())["choices"][0]["message"]["content"]
+    if not r.ok:
+        raise RuntimeError(f"Groq API {r.status_code}: {r.text}")
+    return r.json()["choices"][0]["message"]["content"]
 
 async def build_voice(sentences, wav_path, words_path):
     full_text = " ".join(sentences)
@@ -92,12 +100,13 @@ Output ONLY raw JavaScript code (no markdown fences)."""
     ], check=True)
 
     if TG_TOKEN and TG_CHAT and os.path.exists(final_mp4):
-        subprocess.run([
-            "curl", "-s", "-F", f"chat_id={TG_CHAT}",
-            "-F", f"caption=🎬 {script_data.get('title', TOPIC)}",
-            "-F", f"video=@{final_mp4}",
-            f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TG_TOKEN}/sendVideo"
-        ], check=True)
+        with open(final_mp4, "rb") as vid:
+            requests.post(
+                f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TG_TOKEN}/sendVideo",
+                data={"chat_id": TG_CHAT, "caption": f"🎬 {script_data.get('title', TOPIC)}"},
+                files={"video": vid},
+                timeout=120
+            )
 
 if __name__ == "__main__":
     main()

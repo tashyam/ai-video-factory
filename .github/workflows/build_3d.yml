@@ -23,7 +23,7 @@ jobs:
       - name: Install FFmpeg, Playwright & Edge-TTS
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install edge-tts
+          pip install edge-tts requests
           cd 3d-video-studio/engine
           npm install
           npx playwright install --with-deps chromium

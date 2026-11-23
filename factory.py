@@ -112,13 +112,13 @@ async def build_voice(sentences, wav_path, words_path):
     return words[-1][1] if words else 55.0
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
-    js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '../engine/core.js';
-import {{ makeStage }} from '../engine/stage.js';
-import {{ addHighway }} from '../engine/sets/highway.js';
-import {{ addRoom }} from '../engine/sets/room.js';
-import {{ makeChar, pose, exprAt, talkAt }} from '../engine/chars.js';
-import {{ makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV }} from '../engine/cars.js';
-import {{ captionsFromWords, sentenceStarts }} from '../engine/captions.js';
+    js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '/engine/core.js';
+import {{ makeStage }} from '/engine/stage.js';
+import {{ addHighway }} from '/engine/sets/highway.js';
+import {{ addRoom }} from '/engine/sets/room.js';
+import {{ makeChar, pose, exprAt, talkAt }} from '/engine/chars.js';
+import {{ makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV }} from '/engine/cars.js';
+import {{ captionsFromWords, sentenceStarts }} from '/engine/captions.js';
 import CAST from './cast.json' with {{ type: 'json' }};
 import WORDS from './audio/vo.words.json' with {{ type: 'json' }};
 

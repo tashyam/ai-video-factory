@@ -125,7 +125,19 @@ async def build_voice(sentences, wav_path, words_path):
         except Exception as e:
             print(f"TTS attempt {attempt+1} ({voice}) failed: {e}")
             await asyncio.sleep(2 ** min(attempt, 3))
-    raise RuntimeError("edge-tts failed after 6 retries across 4 voices")
+    print("edge-tts blocked on runner IP; falling back to gTTS...")
+    from gtts import gTTS
+    gTTS(text=full_text, lang="en", slow=False).save(mp3_path)
+    subprocess.run(["ffmpeg", "-y", "-i", mp3_path, "-ar", "24000", "-ac", "1", wav_path], check=True)
+    dur_out = subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", wav_path]).decode().strip()
+    total_s = float(dur_out) if dur_out else 45.0
+    raw_words = full_text.split()
+    step = total_s / max(1, len(raw_words))
+    words = [{"w": w, "s": round(i * step, 3), "e": round((i + 1) * step, 3)} for i, w in enumerate(raw_words)]
+    with open(words_path, "w") as f:
+        json.dump(words, f)
+    print(f"gTTS fallback succeeded ({total_s:.2f}s)")
+    return total_s
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl = open("3d-video-studio/engine/template/video.js").read()

@@ -128,55 +128,57 @@ async def build_voice(sentences, wav_path, words_path):
     raise RuntimeError("edge-tts failed after 6 retries across 4 voices")
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
-    js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from '/_engine/src/core.js';
-import {{ makeStage }} from '/_engine/src/stage.js';
-import {{ addHighway }} from '/_engine/src/sets/highway.js';
-import {{ addRoom }} from '/_engine/src/sets/room.js';
-import {{ makeChar, exprAt, talkAt }} from '/_engine/src/chars.js';
-import {{ buildCar, rollWheels, brakeLights }} from '/_engine/src/cars.js';
-import {{ captionsFromWords, sentenceStarts }} from '/_engine/src/captions.js';
-import CAST from './cast.json' with {{ type: 'json' }};
-import WORDS from './audio/vo.words.json' with {{ type: 'json' }};
+    js = f"""import {{ V3, clamp, lerp, ease, DEG, track, run }} from "engine/core.js";
+import {{ makeStage }} from "engine/stage.js";
+import {{ addHighway }} from "engine/sets/highway.js";
+import {{ addRoom }} from "engine/sets/room.js";
+import {{ makeChar, exprAt }} from "engine/chars.js";
+import {{ makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV, IC, IS }} from "engine/cars.js";
+import {{ captionsFromWords, sentenceStarts }} from "engine/captions.js";
+import CAST from "./cast.json" with {{ type: "json" }};
+import WORDS from "./audio/vo.words.json" with {{ type: "json" }};
 
 const S = sentenceStarts(WORDS);
 const TOTAL = Math.max({total_dur:.2f}, (WORDS.at(-1)?.[1] || 45) + 1.2);
 const N = S.length;
 const tAt = (i) => i < N ? S[i] : TOTAL;
 
-// Act 1: Highway Scene
-const st1 = makeStage({{ mood: 'day' }});
+// Act 1: Highway Setup (exact template/video.js setup)
+const st1 = makeStage({{ mood: "day" }});
 addHighway(st1.scene);
-const carA = buildCar(CAST.cars.schemer); st1.scene.add(carA);
-const carB = buildCar(CAST.cars.quiet); st1.scene.add(carB);
+const LANE = 5.55;
+const carA = makeCar(COUPE, 0xffbf0a); addInterior(carA, IC, true); st1.scene.add(carA);
+const carB = makeCar(SUV, 0xbfe9dc); addInterior(carB, IS, false); st1.scene.add(carB);
+tintGlass(carA); tintGlass(carB);
 const schemer1 = makeChar(CAST.characters.schemer); carA.body.add(schemer1);
 const victim1 = makeChar(CAST.characters.victim); carB.body.add(victim1);
 
 function updateAct1(t) {{
   const x = t * 14;
-  carA.position.set(x, 0, 5.55);
-  carB.position.set(x - 9.5 + Math.sin(t * 2.2) * 1.4, 0, 5.55);
-  rollWheels(carA, x); rollWheels(carB, x);
+  carA.position.set(x, 0, LANE);
+  carB.position.set(x - 9.5 + Math.sin(t * 2.2) * 1.4, 0, LANE);
+  rollWheels(carA, false, x * 0.15); rollWheels(carB, false, x * 0.15);
   brakeLights(carA, Math.sin(t * 3) > 0.2);
   const camSide = Math.floor(t / 3.2) % 2 === 0;
   if (camSide) {{
-    st1.camera.position.set(x + 0.35, 1.28, 5.55 - 0.38);
-    st1.camera.lookAt(x + 0.15, 1.18, 5.55 + 0.2);
+    st1.camera.position.set(x + 0.35, 1.28, LANE - 0.38);
+    st1.camera.lookAt(x + 0.15, 1.18, LANE + 0.2);
   }} else {{
-    st1.camera.position.set(x - 4.5, 2.2 + 0.15 * Math.sin(t), 5.55 - 3.6);
-    st1.camera.lookAt(x - 2.0, 1.1, 5.55);
+    st1.camera.position.set(x - 4.5, 2.2 + 0.15 * Math.sin(t), LANE - 3.6);
+    st1.camera.lookAt(x - 2.0, 1.1, LANE);
   }}
-  st1.frame(); st1.follow(x - 4, 0, 5.55);
-  schemer1.pose({{ hip: V3(-0.2, 0.53, -0.30), neck: V3(-0.18, 0.83, -0.30), face: V3(0.5, 0.9, -0.30), expr: exprAt([[0,'smug'],[3,'grin'],[6,'jolt']], t),
+  st1.frame(); st1.follow(x - 4, 0, LANE);
+  schemer1.pose({{ hip: V3(-0.20, 0.53, -0.30), neck: V3(-0.18, 0.83, -0.30), face: V3(0.5, 0.9, -0.30), expr: exprAt([[0,"smug"],[3,"grin"],[6,"jolt"]], t),
     arms: [[V3(0.10, 0.62, -0.60), V3(0.28, 0.72, -0.52)], [V3(0.10, 0.62, -0.16), V3(0.28, 0.72, -0.22)]],
     legs: [[V3(0.06, 0.40, -0.50), V3(0.30, 0.30, -0.56), V3(0.36, 0.46, -0.35)], [V3(0.06, 0.40, -0.36), V3(0.30, 0.30, -0.32), V3(0.36, 0.46, -0.25)]] }}, st1.camera);
-  victim1.pose({{ hip: V3(-0.22, 0.88, -0.40), neck: V3(-0.20, 1.18, -0.40), face: V3(0.5, 1.2, -0.40), expr: exprAt([[0,'calm'],[4,'shock'],[8,'dazed']], t),
+  victim1.pose({{ hip: V3(-0.22, 0.88, -0.40), neck: V3(-0.20, 1.18, -0.40), face: V3(0.5, 1.2, -0.40), expr: exprAt([[0,"calm"],[4,"shock"],[8,"dazed"]], t),
     arms: [[V3(0.05, 0.95, -0.65), V3(0.26, 1.05, -0.58)], [V3(0.05, 0.95, -0.15), V3(0.26, 1.05, -0.22)]],
     legs: [[V3(0.05, 0.72, -0.55), V3(0.25, 0.52, -0.55), V3(0.42, 0.50, -0.55)], [V3(0.05, 0.72, -0.25), V3(0.25, 0.52, -0.25), V3(0.42, 0.50, -0.25)]] }}, st1.camera);
 }}
 
 // Act 2: Office / Room Scene
-const st2 = makeStage({{ mood: 'dusk' }});
-addRoom(st2.scene, {{ kind: 'office' }});
+const st2 = makeStage({{ mood: "dusk" }});
+addRoom(st2.scene, {{ kind: "office" }});
 const schemer2 = makeChar(CAST.characters.schemer); st2.scene.add(schemer2);
 const officer2 = makeChar(CAST.characters.officer); st2.scene.add(officer2);
 
@@ -191,28 +193,29 @@ function updateAct2(t) {{
     st2.camera.lookAt(0.75, 1.35, 0.2);
   }}
   st2.frame();
-  schemer2.pose({{ hip: V3(-0.85, 0.92, 0.2), neck: V3(-0.85, 1.24, 0.2), face: V3(0.0, 1.35, 1.5), expr: exprAt([[0,'smug'],[5,'worried'],[10,'panic']], t),
+  schemer2.pose({{ hip: V3(-0.85, 0.92, 0.2), neck: V3(-0.85, 1.24, 0.2), face: V3(0.0, 1.35, 1.5), expr: exprAt([[0,"smug"],[5,"worried"],[10,"panic"]], t),
     arms: [[V3(-1.05, 1.15, 0.2), V3(-0.65, 1.05, 0.45)], [V3(-0.65, 1.15, 0.2), V3(-0.45, 1.10, 0.45)]],
     legs: [[V3(-0.95, 0.52, 0.2), V3(-0.95, 0.28, 0.22), V3(-0.95, 0.05, 0.22)], [V3(-0.75, 0.52, 0.2), V3(-0.75, 0.28, 0.18), V3(-0.75, 0.05, 0.18)]] }}, st2.camera);
-  officer2.pose({{ hip: V3(0.85, 0.96, 0.2), neck: V3(0.85, 1.30, 0.2), face: V3(0.0, 1.35, 1.5), expr: exprAt([[0,'stern'],[6,'angry'],[12,'grin']], t),
+  officer2.pose({{ hip: V3(0.85, 0.96, 0.2), neck: V3(0.85, 1.30, 0.2), face: V3(0.0, 1.35, 1.5), expr: exprAt([[0,"stern"],[6,"angry"],[12,"grin"]], t),
     arms: [[V3(0.65, 1.20, 0.2), V3(0.45, 1.18, 0.48)], [V3(1.05, 1.20, 0.2), V3(1.12, 0.95, 0.25)]],
     legs: [[V3(0.75, 0.54, 0.2), V3(0.75, 0.28, 0.2), V3(0.75, 0.05, 0.2)], [V3(0.95, 0.54, 0.2), V3(0.95, 0.28, 0.2), V3(0.95, 0.05, 0.2)]] }}, st2.camera);
 }}
 
 // Act 3: Rainy Highway Reveal
-const st3 = makeStage({{ mood: 'rain' }});
+const st3 = makeStage({{ mood: "rain" }});
 addHighway(st3.scene, {{ wet: true }});
-const carC = buildCar(CAST.cars.traffic); st3.scene.add(carC);
+const carC = makeCar(SUV, 0x3b82f6); addInterior(carC, IS, true); st3.scene.add(carC);
+tintGlass(carC);
 const quiet3 = makeChar(CAST.characters.quiet); carC.body.add(quiet3);
 
 function updateAct3(t) {{
   const x = t * 11;
   carC.position.set(x, 0, 1.85);
-  rollWheels(carC, x);
+  rollWheels(carC, false, x * 0.15);
   st3.camera.position.set(x + 0.28, 1.36, 1.85 - 0.34);
   st3.camera.lookAt(x + 0.85, 1.28, 1.85 + 0.12);
   st3.frame(); st3.follow(x - 3, 0, 1.85);
-  quiet3.pose({{ hip: V3(-0.22, 0.88, -0.40), neck: V3(-0.20, 1.18, -0.40), face: V3(0.6, 1.25, -0.40), expr: exprAt([[0,'calm'],[4,'innocent'],[8,'grin']], t),
+  quiet3.pose({{ hip: V3(-0.22, 0.88, -0.40), neck: V3(-0.20, 1.18, -0.40), face: V3(0.6, 1.25, -0.40), expr: exprAt([[0,"calm"],[4,"innocent"],[8,"grin"]], t),
     arms: [[V3(0.05, 0.95, -0.65), V3(0.32, 1.15, -0.42)], [V3(0.05, 0.95, -0.15), V3(0.28, 1.05, -0.22)]],
     legs: [[V3(0.05, 0.72, -0.55), V3(0.25, 0.52, -0.55), V3(0.42, 0.50, -0.55)], [V3(0.05, 0.72, -0.25), V3(0.25, 0.52, -0.25), V3(0.42, 0.50, -0.25)]] }}, st3.camera);
 }}
@@ -222,9 +225,9 @@ const cut2 = tAt(Math.max(2, Math.floor(N * 0.72)));
 
 run({{
   shots: [
-    {{ start: 0, end: cut1, stage: st1, update: updateAct1, grade: st1.grade, type: 'interior', dof: {{ clnf: 0, focus: 2 }} }},
-    {{ start: cut1, end: cut2, stage: st2, update: updateAct2, grade: st2.grade, type: 'twoshot', dof: {{ clnf: 0, focus: 2 }} }},
-    {{ start: cut2, end: TOTAL, stage: st3, update: updateAct3, grade: st3.grade, type: 'interior', dof: {{ clnf: 0, focus: 2 }} }}
+    {{ start: 0, end: cut1, stage: st1, update: updateAct1, grade: st1.grade, type: "interior", dof: {{ clnf: 0, focus: 2 }} }},
+    {{ start: cut1, end: cut2, stage: st2, update: updateAct2, grade: st2.grade, type: "twoshot", dof: {{ clnf: 0, focus: 2 }} }},
+    {{ start: cut2, end: TOTAL, stage: st3, update: updateAct3, grade: st3.grade, type: "interior", dof: {{ clnf: 0, focus: 2 }} }}
   ],
   captions: captionsFromWords(WORDS),
   sound: [],

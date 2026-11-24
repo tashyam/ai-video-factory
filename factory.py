@@ -189,7 +189,7 @@ TAGS: <4 viral hashtags>
     build_deterministic_video_js(proj, len(sentences), dur)
 
     os.makedirs(f"{proj}/out", exist_ok=True)
-    subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4"], check=True)
+    subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4", "0", f"{total_dur:.2f}"], check=True)
     final_mp4 = f"{proj}/out/final_short.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-i", f"{proj}/out/silent.mp4", "-i", f"{proj}/audio/vo.wav",

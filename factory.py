@@ -129,9 +129,8 @@ async def build_voice(sentences, wav_path, words_path):
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl = open("3d-video-studio/engine/template/video.js").read()
-    # Replace template static captions & 5s duration with live TTS duration and word-synced captions
-    tpl = tpl.replace("import { V3, clamp, lerp, ease, DEG, table, track, run } from "engine/core.js";",
-                      "import { V3, clamp, lerp, ease, DEG, table, track, run } from "engine/core.js";\nimport { captionsFromWords } from "engine/captions.js";\nimport WORDS from "./audio/vo.words.json" with { type: "json" };")
+    header = 'import { captionsFromWords } from "engine/captions.js";\nimport WORDS from "./audio/vo.words.json" with { type: "json" };\n'
+    tpl = header + tpl
     tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({total_dur:.2f}, (WORDS.at(-1)?.[1] || 45) + 1.2);")
     tpl = tpl.replace("end: 5,", "end: DUR,")
     c_start = tpl.index("captions: [")

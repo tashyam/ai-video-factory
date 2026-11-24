@@ -202,7 +202,7 @@ TAGS: <4 viral hashtags>
         caption = f"🎬 {title}\n\n{hashtags}"
         with open(final_mp4, "rb") as vid:
             resp = requests.post(
-                f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TG_TOKEN}/sendVideo",
+                f"https://api.telegram.org/bot{TG_TOKEN}/sendVideo",
                 data={"chat_id": TG_CHAT, "caption": caption[:1024]},
                 files={"video": vid},
                 timeout=120

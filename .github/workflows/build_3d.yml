@@ -54,6 +54,7 @@ jobs:
           sed -i "s/for (let i = 0; i < n; i++) {/for (let i = 0; i < n; i++) { if (i % 30 === 0) console.log('Rendering frame ' + i + '\/' + n);/g" 3d-video-studio/engine/film.mjs
           python factory.py "${{ github.event.inputs.topic }}"
       - name: Upload MP4 Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: 3d-cartoon-video

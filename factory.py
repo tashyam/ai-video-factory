@@ -89,7 +89,7 @@ def parse_script_lines(raw_text, topic):
             hashtags = ln.split(":", 1)[1].strip()
         elif not ln.startswith("{") and not ln.startswith("}") and not ln.startswith("```"):
             sentences.append(ln.strip('"'))
-    if len(sentences) < 8:
+    if len(sentences) < 5:
         raise RuntimeError(f"Too few sentences parsed from Groq output:\n{raw_text}")
     return title, hashtags, sentences[:19]
 
@@ -143,7 +143,7 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl = open("3d-video-studio/engine/template/video.js").read()
     header = 'import { captionsFromWords } from "engine/captions.js";\nimport WORDS from "./audio/vo.words.json" with { type: "json" };\n'
     tpl = header + tpl
-    tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({total_dur:.2f}, (WORDS.at(-1)?.e || 45) + 1.2);")
+    tpl = "window.samplesAt = () => 1;\n" + tpl.replace("const DUR = 5;", f"const DUR = Math.max({total_dur:.2f}, (WORDS.at(-1)?.e || 45) + 1.2);")
     tpl = tpl.replace("end: 5,", "end: DUR,")
     c_start = tpl.index("captions: [")
     c_end = tpl.index("samples:")
@@ -160,7 +160,7 @@ def main():
     os.makedirs(f"{proj}/audio", exist_ok=True)
     os.makedirs(f"{proj}/out", exist_ok=True)
 
-    script_prompt = f"""Write a 60-second funny, fast-paced fake-origin YouTube Shorts narration about: "{topic}".
+    script_prompt = f"""Write a 30-second punchy, fast-paced fake-origin YouTube Shorts narration about: "{topic}".
 Rules:
 - Hook in sentence 1: past tense, a bold schemer pulls a clever scam/loophole.
 - Middle: he repeats it, escalates, makes easy money, until a quiet ordinary person uses a simple everyday object that ruins the whole trick.
@@ -171,7 +171,7 @@ TITLE: <Curiosity-gap Shorts YouTube invention naming the title without>
 TAGS: <4 viral hashtags>
 <Sentence 1>
 <Sentence 2>
-... (15 to 18 sentences total)"""
+... (7 to 9 sentences total)"""
 
     raw_script = groq_chat(script_prompt)
     title, hashtags, sentences = parse_script_lines(raw_script, topic)

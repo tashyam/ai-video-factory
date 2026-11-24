@@ -89,7 +89,7 @@ def parse_script_lines(raw_text, topic):
             hashtags = ln.split(":", 1)[1].strip()
         elif not ln.startswith("{") and not ln.startswith("}") and not ln.startswith("```"):
             sentences.append(ln.strip('"'))
-    if len(sentences) < 5:
+    if len(sentences) < 4:
         raise RuntimeError(f"Too few sentences parsed from Groq output:\n{raw_text}")
     return title, hashtags, sentences[:19]
 
@@ -148,6 +148,7 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
     c_start = tpl.index("captions: [")
     c_end = tpl.index("samples:")
     tpl = tpl[:c_start] + "captions: captionsFromWords(WORDS),\n  " + tpl[c_end:]
+    tpl += "\nwindow.samplesAt = () => 1;\n"
     with open(f"{proj}/video.js", "w") as f:
         f.write(tpl)
 
@@ -160,7 +161,7 @@ def main():
     os.makedirs(f"{proj}/audio", exist_ok=True)
     os.makedirs(f"{proj}/out", exist_ok=True)
 
-    script_prompt = f"""Write a 30-second punchy, fast-paced fake-origin YouTube Shorts narration about: "{topic}".
+    script_prompt = f"""Write a 22-second ultra-punchy, fast-paced fake-origin YouTube Shorts narration about: "{topic}".
 Rules:
 - Hook in sentence 1: past tense, a bold schemer pulls a clever scam/loophole.
 - Middle: he repeats it, escalates, makes easy money, until a quiet ordinary person uses a simple everyday object that ruins the whole trick.
@@ -171,7 +172,7 @@ TITLE: <Curiosity-gap Shorts YouTube invention naming the title without>
 TAGS: <4 viral hashtags>
 <Sentence 1>
 <Sentence 2>
-... (7 to 9 sentences total)"""
+... (5 to 6 short punchy sentences total)"""
 
     raw_script = groq_chat(script_prompt)
     title, hashtags, sentences = parse_script_lines(raw_script, topic)
@@ -193,7 +194,7 @@ TAGS: <4 viral hashtags>
     final_mp4 = f"{proj}/out/final_short.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-i", f"{proj}/out/silent.mp4", "-i", f"{proj}/audio/vo.wav",
-        "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-map", "0:v", "-map", "1:a", "-vf", "scale=1080:1920:flags=lanczos", "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", "-b:a", "192k",
         "-af", "apad,loudnorm=I=-14:TP=-1.5", "-shortest", final_mp4
     ], check=True)
 

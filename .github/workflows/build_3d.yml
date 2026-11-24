@@ -35,7 +35,9 @@ jobs:
           if [ "${{ steps.cache-3d.outputs.cache-hit }}" != "true" ]; then
             cd 3d-video-studio && bash setup.sh && cd ..
           fi
-          ln -sfn "$(pwd)/3d-video-studio/kit/node_modules" 3d-video-studio/engine/node_modules
+          NM_SRC=$(find 3d-video-studio -maxdepth 3 -name "three" -type d | head -n 1 | xargs dirname)
+          echo "Found node_modules at: $NM_SRC"
+          ln -sfn "$(pwd)/$NM_SRC" 3d-video-studio/engine/node_modules
       - name: Save 3D Engine & Chromium Cache (Always)
         if: always() && steps.cache-3d.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

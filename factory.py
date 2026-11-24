@@ -265,7 +265,7 @@ TAGS: <4 viral hashtags>
     with open(f"{proj}/script.json", "w") as f:
         json.dump(sentences, f, indent=2)
 
-    words, dur = build_voice(proj, sentences)
+    words, dur = asyncio.run(build_voice(proj, sentences))
 
     subprocess.run(["node", "3d-video-studio/engine/cast.mjs", "new", proj,
                     "--chars", "schemer,quiet,victim,officer",

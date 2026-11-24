@@ -111,17 +111,17 @@ async def build_voice(sentences, wav_path, words_path):
                     elif chunk["type"] == "WordBoundary":
                         t0 = round(chunk["offset"] / 10_000_000, 3)
                         t1 = round((chunk["offset"] + chunk["duration"]) / 10_000_000, 3)
-                        words.append([t0, t1, chunk["text"]])
+                        words.append({"w": chunk["text"], "s": t0, "e": t1})
             if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
                 subprocess.run(["ffmpeg", "-y", "-i", mp3_path, "-ar", "24000", "-ac", "1", wav_path], check=True)
                 if not words:
                     raw_words = full_text.split()
                     step = 0.28
-                    words = [[round(i * step, 3), round((i + 1) * step, 3), w] for i, w in enumerate(raw_words)]
+                    words = [{"w": w, "s": round(i * step, 3), "e": round((i + 1) * step, 3)} for i, w in enumerate(raw_words)]
                 with open(words_path, "w") as f:
                     json.dump(words, f)
                 print(f"TTS succeeded with {voice} ({words[-1][1]}s)")
-                return words[-1][1]
+                return words[-1]["e"]
         except Exception as e:
             print(f"TTS attempt {attempt+1} ({voice}) failed: {e}")
             await asyncio.sleep(2 ** min(attempt, 3))
@@ -131,7 +131,7 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl = open("3d-video-studio/engine/template/video.js").read()
     header = 'import { captionsFromWords } from "engine/captions.js";\nimport WORDS from "./audio/vo.words.json" with { type: "json" };\n'
     tpl = header + tpl
-    tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({total_dur:.2f}, (WORDS.at(-1)?.[1] || 45) + 1.2);")
+    tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({total_dur:.2f}, (WORDS.at(-1)?.e || 45) + 1.2);")
     tpl = tpl.replace("end: 5,", "end: DUR,")
     c_start = tpl.index("captions: [")
     c_end = tpl.index("samples:")

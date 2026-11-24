@@ -49,7 +49,8 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: sed -i "s/W = 1080, H = 1920/W = 540, H = 960/g" 3d-video-studio/engine/film.mjs
+        run: |
+          sed -i "s/W = 1080, H = 1920/W = 540, H = 960/g" 3d-video-studio/engine/film.mjs
           python factory.py "${{ github.event.inputs.topic }}"
       - name: Upload MP4 Artifact
         uses: actions/upload-artifact@v4

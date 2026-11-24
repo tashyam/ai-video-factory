@@ -185,7 +185,7 @@ WORKING TEMPLATE REFERENCE:
         try:
             r = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '')}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '').strip()}", "Content-Type": "application/json"},
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}],
@@ -261,6 +261,9 @@ TAGS: <4 viral hashtags>
     os.makedirs(f"{proj}/out", exist_ok=True)
     subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4", "0", f"{dur + 1.2:.2f}"], check=True)
     final_mp4 = f"{proj}/out/final_short.mp4"
+    subprocess.run(["node", "3d-video-studio/engine/film.mjs", "cues", proj], check=False)
+    mix_res = subprocess.run(["python3", "3d-video-studio/engine/audio/mix.py", proj], capture_output=True, text=True)
+    final_audio = f"{proj}/audio/mix.wav" if (mix_res.returncode == 0 and os.path.exists(f"{proj}/audio/mix.wav")) else f"{proj}/audio/vo.wav"
     subprocess.run([
         "ffmpeg", "-y", "-i", f"{proj}/out/silent.mp4", "-i", final_audio,
         "-map", "0:v", "-map", "1:a", "-vf", "scale=1080:1920:flags=lanczos", "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", "-b:a", "192k",

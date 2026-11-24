@@ -93,51 +93,54 @@ def parse_script_lines(raw_text, topic):
         raise RuntimeError(f"Too few sentences parsed from Groq output:\n{raw_text}")
     return title, hashtags, sentences[:19]
 
-async def build_voice(sentences, wav_path, words_path):
-    import re
-    clean_sentences = [re.sub(r"[^a-zA-Z0-9.,!?'\s-]", "", s).strip() for s in sentences]
-    full_text = " ".join([s for s in clean_sentences if s])
-    mp3_path = wav_path.replace(".wav", ".mp3")
-    voices = ["en-US-GuyNeural", "en-US-AndrewMultilingualNeural", "en-US-ChristopherNeural", "en-US-AriaNeural"]
-    for attempt in range(6):
-        voice = voices[attempt % len(voices)]
-        words = []
-        try:
-            communicate = edge_tts.Communicate(full_text, voice)
-            with open(mp3_path, "wb") as f:
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        f.write(chunk["data"])
-                    elif chunk["type"] == "WordBoundary":
-                        t0 = round(chunk["offset"] / 10_000_000, 3)
-                        t1 = round((chunk["offset"] + chunk["duration"]) / 10_000_000, 3)
-                        words.append({"w": chunk["text"], "s": t0, "e": t1})
-            if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
-                subprocess.run(["ffmpeg", "-y", "-i", mp3_path, "-ar", "24000", "-ac", "1", wav_path], check=True)
-                if not words:
-                    raw_words = full_text.split()
-                    step = 0.28
-                    words = [{"w": w, "s": round(i * step, 3), "e": round((i + 1) * step, 3)} for i, w in enumerate(raw_words)]
-                with open(words_path, "w") as f:
-                    json.dump(words, f)
-                print(f"TTS succeeded with {voice} ({words[-1][1]}s)")
-                return words[-1]["e"]
-        except Exception as e:
-            print(f"TTS attempt {attempt+1} ({voice}) failed: {e}")
-            await asyncio.sleep(2 ** min(attempt, 3))
-    print("edge-tts blocked on runner IP; falling back to gTTS...")
-    from gtts import gTTS
-    gTTS(text=full_text, lang="en", slow=False).save(mp3_path)
-    subprocess.run(["ffmpeg", "-y", "-i", mp3_path, "-ar", "24000", "-ac", "1", wav_path], check=True)
-    dur_out = subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", wav_path]).decode().strip()
-    total_s = float(dur_out) if dur_out else 45.0
-    raw_words = full_text.split()
-    step = total_s / max(1, len(raw_words))
+async def build_voice(proj, sentences):
+    import shutil
+    text = " ".join(sentences)
+    os.makedirs(f"{proj}/audio", exist_ok=True)
+    with open(f"{proj}/script.json", "w", encoding="utf-8") as f:
+        json.dump(sentences, f, indent=2)
+    mp3_path = f"{proj}/audio/vo.mp3"
+    wav_path = f"{proj}/audio/vo.wav"
+    voices = ["en-US-AndrewMultilingualNeural", "en-US-GuyNeural", "en-US-ChristopherNeural"]
+    tts_ok = False
+    for v in voices:
+        r = subprocess.run(
+            ["edge-tts", "--voice", v, "--rate=+8%", "--text", text, "--write-media", mp3_path],
+            capture_output=True, text=True
+        )
+        if r.returncode == 0 and os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 1000:
+            tts_ok = True
+            break
+    if not tts_ok:
+        from gtts import gTTS
+        gTTS(text=text, lang="en", tld="co.uk").save(mp3_path)
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", mp3_path, "-af", "atempo=1.10,aresample=24000", "-ac", "1", wav_path],
+        check=True
+    )
+    kit_py = "3d-video-studio/kit/.venv/bin/python"
+    if not os.path.exists(kit_py):
+        kit_py = "python3"
+    align = subprocess.run(
+        [kit_py, "3d-video-studio/kit/words.py", wav_path, f"{proj}/script.json"],
+        capture_output=True, text=True
+    )
+    words_json = f"{proj}/audio/vo.words.json"
+    if align.returncode == 0 and os.path.exists(words_json):
+        words = json.load(open(words_json, encoding="utf-8"))
+        dur = words[-1]["e"] if words else 25.0
+        return words, dur
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", wav_path],
+        capture_output=True, text=True
+    )
+    dur = float(probe.stdout.strip() or 25.0)
+    raw_words = text.split()
+    step = dur / max(len(raw_words), 1)
     words = [{"w": w, "s": round(i * step, 3), "e": round((i + 1) * step, 3)} for i, w in enumerate(raw_words)]
-    with open(words_path, "w") as f:
-        json.dump(words, f)
-    print(f"gTTS fallback succeeded ({total_s:.2f}s)")
-    return total_s
+    with open(words_json, "w", encoding="utf-8") as f:
+        json.dump(words, f, indent=2)
+    return words, dur
 
 def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl = open("3d-video-studio/engine/template/video.js").read()
@@ -151,6 +154,87 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl += "\nwindow.samplesAt = () => 1;\n"
     with open(f"{proj}/video.js", "w") as f:
         f.write(tpl)
+
+
+def generate_custom_video_js(proj, topic, sentences, words, total_dur):
+    tpl = open("3d-video-studio/engine/template/video.js", encoding="utf-8").read()
+    api_doc = open("3d-video-studio/engine/API.md", encoding="utf-8").read()[:14000]
+    dur_val = round(total_dur + 1.0, 2)
+    prompt = f"""You are an expert Three.js choreographer for 3d-video-studio.
+Write a complete, valid ES-module `video.js` for a 9:16 YouTube Short.
+Topic: {topic}
+Total Duration: {dur_val} seconds
+Sentences: {json.dumps(sentences)}
+
+CRITICAL RULES:
+1. Follow the exact imports and structure of the template `video.js` below, and ONLY use functions documented in API.md.
+2. Set `const DUR = {dur_val};` and load words from `./audio/vo.words.json` using:
+   `import WORDS from "./audio/vo.words.json" with {{ type: "json" }};`
+   and pass `captions: captionsFromWords(WORDS)` to `run(...)`.
+3. Create 6 to 8 dynamic camera `shots` spanning from `t = 0` all the way to `t = {dur_val}` (never freeze the camera!). Use smooth camera glides (`track(...)`) across multiple angles (interior, wide tracking, close-up reaction, overhead/side push-in, final reveal).
+4. Include expressive character animations (`talkAt`, `exprAt`, `stand`, `sit`) and props/signs (`plateTex`, `sign`) matching the story beats.
+5. Output ONLY valid JavaScript code—no markdown fences, no explanations.
+
+API REFERENCE:
+{api_doc}
+
+WORKING TEMPLATE REFERENCE:
+{tpl}
+"""
+    for model in ["openai/gpt-oss-120b", "qwen/qwen3-32b", "llama-3.3-70b-versatile"]:
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.4,
+                    "max_tokens": 6000
+                },
+                timeout=90
+            )
+            if r.status_code != 200:
+                continue
+            code = r.json()["choices"][0]["message"]["content"].strip()
+            if code.startswith("```"):
+                code = "\n".join(line for line in code.splitlines() if not line.strip().startswith("```"))
+            code += "\nwindow.samplesAt = () => 1;\n"
+            with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
+                f.write(code)
+            chk = subprocess.run(
+                ["node", "3d-video-studio/engine/film.mjs", "check", proj],
+                capture_output=True, text=True, timeout=45
+            )
+            if chk.returncode == 0:
+                print(f"Custom multi-scene video.js passed film.mjs check ({model})")
+                return
+            print(f"Check failed for {model}: {chk.stdout[-300:]}")
+        except Exception as e:
+            print(f"Scene gen error ({model}): {e}")
+
+    # Multi-shot dynamic camera fallback if LLM scene fails check
+    print("Using multi-shot dynamic template fallback...")
+    fallback = tpl.replace("const DUR = 5;", f"const DUR = {dur_val};")
+    fallback = fallback.replace(
+        "const WORDS = [",
+        'import REAL_WORDS from "./audio/vo.words.json" with { type: "json" };\nconst WORDS = REAL_WORDS.length ? REAL_WORDS : ['
+    )
+    loop_shots = f"""
+const _baseShots = shots.slice();
+while (shots[shots.length - 1].end < DUR) {{
+  const lastEnd = shots[shots.length - 1].end;
+  const idx = shots.length % _baseShots.length;
+  const span = Math.min(3.5, DUR - lastEnd);
+  if (span <= 0.2) break;
+  const s = Object.assign({{}}, _baseShots[idx], {{ start: lastEnd, end: +(lastEnd + span).toFixed(2) }});
+  shots.push(s);
+}}
+window.samplesAt = () => 1;
+"""
+    fallback = fallback.replace("run({", loop_shots + "\nrun({")
+    with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
+        f.write(fallback)
 
 def main():
     topic = pick_topic()
@@ -181,19 +265,19 @@ TAGS: <4 viral hashtags>
     with open(f"{proj}/script.json", "w") as f:
         json.dump(sentences, f, indent=2)
 
-    dur = asyncio.run(build_voice(sentences, f"{proj}/audio/vo.wav", f"{proj}/audio/vo.words.json"))
+    dur = asyncio.run(build_voice(sentences, final_audio, f"{proj}/audio/vo.words.json"))
 
     subprocess.run(["node", "3d-video-studio/engine/cast.mjs", "new", proj,
                     "--chars", "schemer,quiet,victim,officer",
                     "--cars", "schemer,quiet,traffic"], check=True)
 
-    build_deterministic_video_js(proj, len(sentences), dur)
+    generate_custom_video_js(proj, topic, sentences, words, dur)
 
     os.makedirs(f"{proj}/out", exist_ok=True)
     subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4", "0", f"{dur + 1.2:.2f}"], check=True)
     final_mp4 = f"{proj}/out/final_short.mp4"
     subprocess.run([
-        "ffmpeg", "-y", "-i", f"{proj}/out/silent.mp4", "-i", f"{proj}/audio/vo.wav",
+        "ffmpeg", "-y", "-i", f"{proj}/out/silent.mp4", "-i", final_audio,
         "-map", "0:v", "-map", "1:a", "-vf", "scale=1080:1920:flags=lanczos", "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-c:a", "aac", "-b:a", "192k",
         "-af", "apad,loudnorm=I=-14:TP=-1.5", "-shortest", final_mp4
     ], check=True)

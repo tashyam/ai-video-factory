@@ -220,19 +220,9 @@ WORKING TEMPLATE REFERENCE:
         "const WORDS = [",
         'import REAL_WORDS from "./audio/vo.words.json" with { type: "json" };\nconst WORDS = REAL_WORDS.length ? REAL_WORDS : ['
     )
-    loop_shots = f"""
-const _baseShots = shots.slice();
-while (shots[shots.length - 1].end < DUR) {{
-  const lastEnd = shots[shots.length - 1].end;
-  const idx = shots.length % _baseShots.length;
-  const span = Math.min(3.5, DUR - lastEnd);
-  if (span <= 0.2) break;
-  const s = Object.assign({{}}, _baseShots[idx], {{ start: lastEnd, end: +(lastEnd + span).toFixed(2) }});
-  shots.push(s);
-}}
-window.samplesAt = () => 1;
-"""
-    fallback = fallback.replace("run({", loop_shots + "\nrun({")
+    fallback = fallback.replace("shots: [", "shots: (function(arr){ const base = arr.slice(); while (arr[arr.length-1].end < DUR) { const last = arr[arr.length-1].end; const span = Math.min(3.2, DUR - last); if (span <= 0.2) break; arr.push(Object.assign({}, base[arr.length % base.length], { start: last, end: +(last + span).toFixed(2) })); } return arr; })([")
+    fallback = fallback.replace("captions:", "]),\n  captions:")
+    fallback += "\nwindow.samplesAt = () => 1;\n"
     with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
         f.write(fallback)
 

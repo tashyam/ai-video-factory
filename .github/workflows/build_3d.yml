@@ -20,14 +20,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Cache 3D Engine & Chromium
+      - name: Restore 3D Engine & Chromium Cache
         id: cache-3d
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             3d-video-studio/kit
             ~/.cache/ms-playwright
-          key: 3d-studio-v2-${{ hashFiles('3d-video-studio/setup.sh') }}
+          key: 3d-studio-v3-${{ hashFiles('3d-video-studio/setup.sh') }}
       - name: Install FFmpeg, Engine & Python Libs
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
@@ -36,6 +36,14 @@ jobs:
             cd 3d-video-studio && bash setup.sh && cd ..
           fi
           ln -sfn "$(pwd)/3d-video-studio/kit/node_modules" 3d-video-studio/engine/node_modules
+      - name: Save 3D Engine & Chromium Cache (Always)
+        if: always() && steps.cache-3d.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            3d-video-studio/kit
+            ~/.cache/ms-playwright
+          key: 3d-studio-v3-${{ hashFiles('3d-video-studio/setup.sh') }}
       - name: Generate & Render 3D Video
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}

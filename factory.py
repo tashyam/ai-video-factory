@@ -143,7 +143,7 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl = open("3d-video-studio/engine/template/video.js").read()
     header = 'import { captionsFromWords } from "engine/captions.js";\nimport WORDS from "./audio/vo.words.json" with { type: "json" };\n'
     tpl = header + tpl
-    tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({dur + 1.2:.2f}, (WORDS.at(-1)?.e || 45) + 1.2);")
+    tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({total_dur:.2f}, (WORDS.at(-1)?.e || 45) + 1.2);")
     tpl = tpl.replace("end: 5,", "end: DUR,")
     c_start = tpl.index("captions: [")
     c_end = tpl.index("samples:")

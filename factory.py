@@ -143,7 +143,7 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
     tpl = open("3d-video-studio/engine/template/video.js").read()
     header = 'import { captionsFromWords } from "engine/captions.js";\nimport WORDS from "./audio/vo.words.json" with { type: "json" };\n'
     tpl = header + tpl
-    tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({total_dur:.2f}, (WORDS.at(-1)?.e || 45) + 1.2);")
+    tpl = tpl.replace("const DUR = 5;", f"const DUR = Math.max({dur + 1.2:.2f}, (WORDS.at(-1)?.e || 45) + 1.2);")
     tpl = tpl.replace("end: 5,", "end: DUR,")
     c_start = tpl.index("captions: [")
     c_end = tpl.index("samples:")
@@ -189,7 +189,7 @@ TAGS: <4 viral hashtags>
     build_deterministic_video_js(proj, len(sentences), dur)
 
     os.makedirs(f"{proj}/out", exist_ok=True)
-    subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4", "0", f"{total_dur:.2f}"], check=True)
+    subprocess.run(["node", "3d-video-studio/engine/film.mjs", "render", proj, f"{proj}/out/silent.mp4", "0", f"{dur + 1.2:.2f}"], check=True)
     final_mp4 = f"{proj}/out/final_short.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-i", f"{proj}/out/silent.mp4", "-i", f"{proj}/audio/vo.wav",

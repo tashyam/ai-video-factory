@@ -1,7 +1,7 @@
 import os, sys, json, time, asyncio, subprocess, random, requests
 import edge_tts
 
-GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip().strip()
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 RAW_TOPIC = sys.argv[1].strip() if len(sys.argv) > 1 else ""
@@ -215,8 +215,11 @@ WORKING TEMPLATE REFERENCE:
 
     # Multi-shot dynamic camera fallback if LLM scene fails check
     print("Using multi-shot dynamic template fallback...")
+    import re as _re
     fallback = tpl.replace("const DUR = 5;", f"const DUR = {dur_val};")
-    fallback = fallback.replace("const WORDS = [", 'import REAL_WORDS from "./audio/vo.words.json" with { type: "json" };\nconst WORDS = REAL_WORDS.length ? REAL_WORDS : [')
+    fallback = _re.sub(r"const WORDS\s*=\s*\[[\s\S]*?\];", 'import REAL_WORDS from "./audio/vo.words.json" with { type: "json" };\nconst WORDS = REAL_WORDS;', fallback, count=1)
+    fallback = fallback.replace("shots: [", "shots: ((s) => { const b = s.slice(); while (s[s.length-1].end < DUR) { const last = s[s.length-1].end; const span = Math.min(3.0, DUR - last); if (span <= 0.15) break; s.push(Object.assign({}, b[s.length % b.length], { start: last, end: +(last + span).toFixed(2) })); } return s; })([")
+    fallback = _re.sub(r"(\n\s*\],\s*\n\s*captions:)", r"\n  ]),\n  captions:", fallback, count=1)
     fallback += "\nwindow.samplesAt = () => 1;\n"
     with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
         f.write(fallback)

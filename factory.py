@@ -174,7 +174,7 @@ import { makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV, I
 import { makeChar, exprAt, stand, sit, sitOn, talkAt } from "engine/chars.js";
 import { sign, desk, chair, laptop, shelf, safe, cashPile, camBox, screen, counter, panel } from "engine/props.js";
 import { forest, houseRow, guardrail, grassTufts, bushRow, paintedTree } from "engine/scenery.js";
-import { puffs, tyreSmoke, skids, skid, debris, NightMats } from "engine/fx.js";
+import { puffs, tyreSmoke, skids, skid, debris } from "engine/fx.js";
 import { captionsFromWords, sentenceStarts } from "engine/captions.js";
 import WORDS from "./audio/vo.words.json" with { type: "json" };
 
@@ -258,6 +258,7 @@ REQUIREMENTS:
                     blocks = _re.findall(r"```(?:javascript|js)?\s*([\s\S]*?)```", code)
                     if blocks:
                         code = blocks[0].strip()
+                code = code.replace(", NightMats", "").replace("NightMats, ", "").replace("NightMats", "")
                 if "window.samplesAt" not in code:
                     code += "\nwindow.samplesAt = () => 1;\n"
                 with open(f"{proj}/video.js", "w", encoding="utf-8") as f:

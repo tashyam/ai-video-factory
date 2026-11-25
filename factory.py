@@ -163,7 +163,7 @@ def generate_custom_video_js(proj, topic, sentences, words, total_dur):
     dur_val = round(max(total_dur + 1.0, (words[-1]["e"] if words else 15.0) + 1.0), 2)
 
     # Detect exact captionsFromWords import path from template
-    cap_mod = "../engine/captions.js"
+    cap_mod = "engine/captions.js"
     for _ln in tpl.splitlines():
         if "captionsFromWords" in _ln and "from" in _ln:
             cap_mod = _ln.split("from")[-1].strip().strip(";\x27\x22 ")
@@ -197,7 +197,7 @@ WORKING TEMPLATE REFERENCE:
     try:
         m_resp = requests.get(
             "https://api.groq.com/openai/v1/models",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            headers={"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '').strip()}"},
             timeout=20,
         ).json()
         avail = [m["id"] for m in m_resp.get("data", [])]
@@ -213,7 +213,7 @@ WORKING TEMPLATE REFERENCE:
             print(f"Generating custom 3D scene with {model}...")
             r = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '').strip()}", "Content-Type": "application/json"},
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}],

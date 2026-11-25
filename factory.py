@@ -157,9 +157,18 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
 
 
 def generate_custom_video_js(proj, topic, sentences, words, total_dur):
+    import re as _re
     tpl = open("3d-video-studio/engine/template/video.js", encoding="utf-8").read()
     api_doc = open("3d-video-studio/engine/API.md", encoding="utf-8").read()[:14000]
-    dur_val = round(total_dur + 1.0, 2)
+    dur_val = round(max(total_dur + 1.0, (words[-1]["e"] if words else 15.0) + 1.0), 2)
+
+    # Detect exact captionsFromWords import path from template
+    cap_mod = "../engine/captions.js"
+    for _ln in tpl.splitlines():
+        if "captionsFromWords" in _ln and "from" in _ln:
+            cap_mod = _ln.split("from")[-1].strip().strip(";\x27\x22 ")
+            break
+
     prompt = f"""You are an expert Three.js choreographer for 3d-video-studio.
 Write a complete, valid ES-module `video.js` for a 9:16 YouTube Short.
 Topic: {topic}
@@ -167,12 +176,13 @@ Total Duration: {dur_val} seconds
 Sentences: {json.dumps(sentences)}
 
 CRITICAL RULES:
-1. Follow the exact imports and structure of the template `video.js` below, and ONLY use functions documented in API.md.
-2. Set `const DUR = {dur_val};` and load words from `./audio/vo.words.json` using:
-   `import WORDS from "./audio/vo.words.json" with {{ type: "json" }};`
-   and pass `captions: captionsFromWords(WORDS)` to `run(...)`.
-3. Create 6 to 8 dynamic camera `shots` spanning from `t = 0` all the way to `t = {dur_val}` (never freeze the camera!). Use smooth camera glides (`track(...)`) across multiple angles (interior, wide tracking, close-up reaction, overhead/side push-in, final reveal).
-4. Include expressive character animations (`talkAt`, `exprAt`, `stand`, `sit`) and props/signs (`plateTex`, `sign`) matching the story beats.
+1. Follow the exact imports and structure of the working template `video.js` below, and ONLY use functions documented in API.md.
+2. Set `const DUR = {dur_val};` and load real synced words:
+   import WORDS from "./audio/vo.words.json" with {{ type: "json" }};
+   import {{ captionsFromWords }} from "{cap_mod}";
+   and pass `captions: captionsFromWords(WORDS)` into `run({{...}})`.
+3. Create 6 to 8 dynamic camera `shots` spanning continuously from `t = 0` all the way to `t = {dur_val}` (the final shot MUST have `end: DUR` so the video NEVER freezes early). Use varied camera angles (wide establishing, over-shoulder, close-up reaction, overhead, low-angle push-in).
+4. Choreograph distinct character actions (`talkAt`, `express`, `stand`, `sit`, `walkTo`), vehicles, and props (`plateTex`, `sign`) matching the story beats of "{topic}"—do NOT copy the template's car crash story.
 5. Output ONLY valid JavaScript code—no markdown fences, no explanations.
 
 API REFERENCE:
@@ -181,24 +191,49 @@ API REFERENCE:
 WORKING TEMPLATE REFERENCE:
 {tpl}
 """
-    for model in ["openai/gpt-oss-120b", "qwen/qwen3-32b", "llama-3.3-70b-versatile"]:
+
+    # Query available Groq models dynamically
+    candidate_models = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b", "openai/gpt-oss-20b"]
+    try:
+        m_resp = requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            timeout=20,
+        ).json()
+        avail = [m["id"] for m in m_resp.get("data", [])]
+        skip = ("whisper", "tts", "guard", "orpheus", "playai", "safeguard")
+        filtered = [m for m in avail if not any(s in m.lower() for s in skip)]
+        if filtered:
+            candidate_models = [m for m in candidate_models if m in filtered] + [m for m in filtered if m not in candidate_models]
+    except Exception:
+        pass
+
+    for model in candidate_models[:5]:
         try:
+            print(f"Generating custom 3D scene with {model}...")
             r = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {os.environ.get('GROQ_API_KEY', '').strip()}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.4,
-                    "max_tokens": 6000
+                    "temperature": 0.45,
+                    "max_tokens": 4096,
                 },
-                timeout=90
+                timeout=90,
             )
             if r.status_code != 200:
+                print(f"Scene HTTP {r.status_code} ({model}): {r.text[:160]}")
                 continue
-            code = r.json()["choices"][0]["message"]["content"].strip()
-            if code.startswith("```"):
-                code = "\n".join(line for line in code.splitlines() if not line.strip().startswith("```"))
+            code = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            if "<think>" in code and "</think>" in code:
+                code = code.split("</think>", 1)[1].strip()
+            if "```" in code:
+                blocks = _re.findall(r"```(?:javascript|js)?\s*([\s\S]*?)```", code)
+                if blocks:
+                    code = blocks[0].strip()
+            if "captionsFromWords" not in code:
+                code = f'import WORDS from "./audio/vo.words.json" with {{ type: "json" }};\nimport {{ captionsFromWords }} from "{cap_mod}";\n' + code
             code += "\nwindow.samplesAt = () => 1;\n"
             with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
                 f.write(code)
@@ -207,19 +242,67 @@ WORKING TEMPLATE REFERENCE:
                 capture_output=True, text=True, timeout=45
             )
             if chk.returncode == 0:
-                print(f"Custom multi-scene video.js passed film.mjs check ({model})")
+                print(f"Custom multi-scene video.js passed film.mjs check ({model})!")
                 return
-            print(f"Check failed for {model}: {chk.stdout[-300:]}")
+            print(f"film.mjs check failed ({model}): {(chk.stdout + chk.stderr)[-400:]}")
         except Exception as e:
             print(f"Scene gen error ({model}): {e}")
 
-    # Multi-shot dynamic camera fallback if LLM scene fails check
-    print("Using multi-shot dynamic template fallback...")
-    import re as _re
-    fallback = tpl.replace("const DUR = 5;", f"const DUR = {dur_val};")
-    fallback = _re.sub(r"const WORDS\s*=\s*\[[\s\S]*?\];", 'import REAL_WORDS from "./audio/vo.words.json" with { type: "json" };\nconst WORDS = REAL_WORDS;', fallback, count=1)
-    fallback = fallback.replace("shots: [", "shots: ((s) => { const b = s.slice(); while (s[s.length-1].end < DUR) { const last = s[s.length-1].end; const span = Math.min(3.0, DUR - last); if (span <= 0.15) break; s.push(Object.assign({}, b[s.length % b.length], { start: last, end: +(last + span).toFixed(2) })); } return s; })([")
-    fallback = _re.sub(r"(\n\s*\],\s*\n\s*captions:)", r"\n  ]),\n  captions:", fallback, count=1)
+    # Deterministic full-duration multi-shot fallback with synced captions & topic-varied camera/cast
+    print("Using full-duration synced-caption fallback...")
+    fallback = tpl
+    if "captionsFromWords" not in fallback:
+        fallback = f'import {{ captionsFromWords }} from "{cap_mod}";\n' + fallback
+    fallback = 'import WORDS from "./audio/vo.words.json" with { type: "json" };\n' + fallback
+    fallback = _re.sub(r"const\s+DUR\s*=\s*[\d.]+\s*;", f"const DUR = {dur_val};", fallback, count=1)
+
+    # Replace template's hardcoded captions: [...] block with synced captionsFromWords(WORDS)
+    c_start = fallback.find("captions:")
+    if c_start != -1:
+        b_open = fallback.find("[", c_start)
+        if b_open != -1:
+            depth = 0
+            b_close = -1
+            for idx in range(b_open, len(fallback)):
+                if fallback[idx] == "[":
+                    depth += 1
+                elif fallback[idx] == "]":
+                    depth -= 1
+                    if depth == 0:
+                        b_close = idx
+                        break
+            if b_close != -1:
+                fallback = fallback[:c_start] + "captions: captionsFromWords(WORDS)" + fallback[b_close + 1:]
+
+    # Extend shots array so camera cuts continuously from 0 to DUR (never freezes at 5s)
+    s_start = fallback.find("shots:")
+    if s_start != -1:
+        sb_open = fallback.find("[", s_start)
+        if sb_open != -1:
+            depth = 0
+            sb_close = -1
+            for idx in range(sb_open, len(fallback)):
+                if fallback[idx] == "[":
+                    depth += 1
+                elif fallback[idx] == "]":
+                    depth -= 1
+                    if depth == 0:
+                        sb_close = idx
+                        break
+            if sb_close != -1:
+                raw_shots = fallback[sb_open:sb_close + 1]
+                wrapped_shots = (
+                    f"((arr) => {{ const base = arr.slice(); "
+                    f"while (arr.length && arr[arr.length - 1].end < DUR) {{ "
+                    f"const last = arr[arr.length - 1].end; "
+                    f"const span = Math.min(2.8, +(DUR - last).toFixed(2)); "
+                    f"if (span <= 0.15) break; "
+                    f"const tplShot = base[arr.length % base.length]; "
+                    f"arr.push(Object.assign({{}}, tplShot, {{ start: last, end: +(last + span).toFixed(2) }})); "
+                    f"}} return arr; }})({raw_shots})"
+                )
+                fallback = fallback[:sb_open] + wrapped_shots + fallback[sb_close + 1:]
+
     fallback += "\nwindow.samplesAt = () => 1;\n"
     with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
         f.write(fallback)

@@ -169,7 +169,7 @@ import { makeStage } from "engine/stage.js";
 import { addHighway } from "engine/sets/highway.js";
 import { addHouse } from "engine/sets/house.js";
 import { addRoom } from "engine/sets/room.js";
-import { point, box, plateTex, blobShadow, lacquer } from "engine/materials.js";
+import { M, box, plateTex, blobShadow, lacquer } from "engine/materials.js"; // use M.point(...) not point(...)
 import { makeCar, addInterior, tintGlass, rollWheels, brakeLights, COUPE, SUV, IC, IS } from "engine/cars.js";
 import { makeChar, exprAt, stand, sit, sitOn, talkAt } from "engine/chars.js";
 import { sign, desk, chair, laptop, shelf, safe, cashPile, camBox, screen, counter, panel } from "engine/props.js";
@@ -264,10 +264,24 @@ REQUIREMENTS:
                 with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
                     f.write(code)
                 chk = subprocess.run(["node", "--check", f"{proj}/video.js"], capture_output=True, text=True)
-                if chk.returncode == 0 and "captionsFromWords" in code and "run(" in code:
+                import_err = ""
+                if chk.returncode == 0:
+                    for _imp in _re.finditer(r'import\s*\{([^}]+)\}\s*from\s*["\'](engine/[^"\']+)["\']', code):
+                        _mod_path = os.path.join("3d-video-studio", _imp.group(2))
+                        if not os.path.exists(_mod_path):
+                            import_err = f"Module not found: {_imp.group(2)}"
+                            break
+                        _mod_txt = open(_mod_path, encoding="utf-8").read()
+                        for _sym in [x.strip().split(" as ")[0].strip() for x in _imp.group(1).split(",") if x.strip()]:
+                            if not _re.search(rf'\bexport\s+(?:function|const|let|var|class)\s+{_sym}\b|\bexport\s*\{{[^}}]*\b{_sym}\b', _mod_txt):
+                                import_err = f"The requested module \'{_imp.group(2)}\' does not provide an export named \'{_sym}\'"
+                                break
+                        if import_err:
+                            break
+                if chk.returncode == 0 and not import_err and "captionsFromWords" in code and "run(" in code:
                     print(f"SUCCESS: Custom multi-stage video.js passed syntax check ({model})!")
                     return
-                err_msg = (chk.stderr or "Missing captionsFromWords or run()")[-500:]
+                err_msg = (import_err or chk.stderr or "Missing captionsFromWords or run()")[-500:]
                 print(f"Syntax check failed ({model} attempt {attempt + 1}): {err_msg}")
                 messages = [{"role": "user", "content": f"Fix this JavaScript syntax error and output ONLY valid JS (no markdown):\nERROR: {err_msg}\n\nCODE:\n{code}"}]
             except Exception as e:

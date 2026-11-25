@@ -159,7 +159,7 @@ def build_deterministic_video_js(proj, num_sentences, total_dur):
 def generate_custom_video_js(proj, topic, sentences, words, total_dur):
     import re as _re
     tpl = open("3d-video-studio/engine/template/video.js", encoding="utf-8").read()
-    api_doc = open("3d-video-studio/engine/API.md", encoding="utf-8").read()
+    api_doc = open("3d-video-studio/engine/API.md", encoding="utf-8").read()[:4500]
     dur_val = round(max(total_dur + 1.0, (words[-1]["e"] if words else 15.0) + 1.0), 2)
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
 
@@ -169,26 +169,39 @@ Topic: {topic}
 Total Duration: {dur_val} seconds
 Sentences: {json.dumps(sentences)}
 
-STRICT REQUIREMENTS:
-1. Copy the EXACT import lines and `run({{ ... }})` structure from the WORKING TEMPLATE below. Do NOT invent imports or helper names not listed in API.md.
+RULES:
+1. Keep exact imports & `run({{...}})` structure from TEMPLATE below. Only use functions in API REFERENCE.
 2. Set `const DUR = {dur_val};` and use:
    import WORDS from "./audio/vo.words.json" with {{ type: "json" }};
    import {{ captionsFromWords }} from "engine/captions.js";
-   Pass `captions: captionsFromWords(WORDS)` in `run({{ ... }})`.
-3. Every single character (`schemer`, `quiet`, `victim`, `officer`) and car (`schemer`, `quiet`, `traffic`) must stay actively animated from `t = 0` all the way to `t = {dur_val}` (never stop all motion at 5s!).
-4. Define 6 to 8 camera `shots` covering `0` to `{dur_val}` continuously (`end: DUR` on the final shot) with varied angles (interior, wide tracking, close-up reaction, overhead, low push-in).
-5. Choreograph props/signs/actions matching "{topic}" (do NOT copy the template's car crash).
-6. Output ONLY raw JavaScript code—no markdown fences, no commentary.
+   Pass `captions: captionsFromWords(WORDS)` in `run({{...}})`.
+3. Keep all characters (`schemer`, `quiet`, `victim`, `officer`) and cars (`schemer`, `quiet`, `traffic`) actively animated from `t = 0` to `t = {dur_val}` across 6-8 camera `shots` (`end: DUR` on last shot).
+4. Match props/signs/actions to "{topic}" (do NOT copy the car crash).
+5. Output ONLY raw JavaScript code (no markdown fences).
 
-FULL API.md REFERENCE:
+API REFERENCE:
 {api_doc}
 
-WORKING TEMPLATE (follow this exact structure & imports):
+TEMPLATE:
 {tpl}
 """
 
-    candidate_models = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b"]
-    for model in candidate_models:
+    candidate_models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+    try:
+        m_resp = requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=20,
+        ).json()
+        avail = [m["id"] for m in m_resp.get("data", [])]
+        skip = ("whisper", "tts", "guard", "orpheus", "playai", "safeguard", "allam")
+        filtered = [m for m in avail if not any(s in m.lower() for s in skip)]
+        if filtered:
+            candidate_models = [m for m in candidate_models if m in filtered] + [m for m in filtered if m not in candidate_models]
+    except Exception:
+        pass
+
+    for model in candidate_models[:4]:
         messages = [{"role": "user", "content": base_prompt}]
         for attempt in range(2):
             try:
@@ -196,7 +209,7 @@ WORKING TEMPLATE (follow this exact structure & imports):
                 r = requests.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                    json={"model": model, "messages": messages, "temperature": 0.35, "max_tokens": 4096},
+                    json={"model": model, "messages": messages, "temperature": 0.35, "max_tokens": 3200},
                     timeout=90,
                 )
                 if r.status_code != 200:
@@ -220,25 +233,21 @@ WORKING TEMPLATE (follow this exact structure & imports):
                 if chk.returncode == 0:
                     print(f"SUCCESS: Custom multi-scene video.js passed film.mjs check ({model})!")
                     return
-                err_msg = (chk.stdout + "\n" + chk.stderr).strip()[-800:]
+                err_msg = (chk.stdout + "\n" + chk.stderr).strip()[-700:]
                 print(f"film.mjs check failed ({model} attempt {attempt + 1}): {err_msg}")
-                messages.append({"role": "assistant", "content": code})
-                messages.append({"role": "user", "content": f"Your code failed `film.mjs check` with this exact error:\n{err_msg}\nFix ONLY the error and output the complete valid JavaScript file (no markdown fences)."})
+                messages = [
+                    {"role": "user", "content": f"Fix this `film.mjs check` error in the Three.js `video.js` below and output ONLY valid JavaScript (no markdown):\nERROR:\n{err_msg}\n\nCODE:\n{code}"}
+                ]
             except Exception as e:
                 print(f"Scene gen error ({model}): {e}")
                 break
 
-    # Continuous full-duration fallback (never freezes at 5s: scales all timestamps from 5s -> DUR)
-    print("Using continuous full-duration synced-caption fallback...")
+    # Continuous time-remapped fallback: scales ALL numeric timestamps proportionally to DUR so motion never stops at 5s
+    print("Using continuous time-remapped synced-caption fallback...")
     fallback = 'import WORDS from "./audio/vo.words.json" with { type: "json" };\nimport { captionsFromWords } from "engine/captions.js";\n' + tpl
     scale = round(dur_val / 5.0, 4)
     fallback = _re.sub(r"const\s+DUR\s*=\s*[\d.]+\s*;", f"const DUR = {dur_val};", fallback, count=1)
-    # Scale every numeric time/start/end/at property so the entire 3D choreography plays smoothly across the full duration instead of freezing at 5s
-    fallback = _re.sub(
-        r"\b(start|end|at|t0|t1|time)\s*:\s*(\d+(?:\.\d+)?)",
-        lambda m: f"{m.group(1)}: {round(float(m.group(2)) * scale, 2)}",
-        fallback,
-    )
+
     c_start = fallback.find("captions:")
     if c_start != -1:
         b_open = fallback.find("[", c_start)
@@ -252,6 +261,15 @@ WORKING TEMPLATE (follow this exact structure & imports):
                     if depth == 0:
                         fallback = fallback[:c_start] + "captions: captionsFromWords(WORDS)" + fallback[idx + 1:]
                         break
+
+    # Scale timeline numbers inside shots & keyframes (0..5s -> 0..DUR) while leaving colors/positions untouched
+    def _scale_nums(m):
+        val = float(m.group(2))
+        if 0 < val <= 5.0:
+            return f"{m.group(1)}{round(val * scale, 2)}"
+        return m.group(0)
+
+    fallback = _re.sub(r"((?:start|end|at|t|time|delay|dur|duration)\s*[:=]\s*|\[\s*)(\d+(?:\.\d+)?)", _scale_nums, fallback)
     fallback += "\nwindow.samplesAt = () => 1;\n"
     with open(f"{proj}/video.js", "w", encoding="utf-8") as f:
         f.write(fallback)

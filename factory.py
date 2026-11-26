@@ -278,6 +278,20 @@ REQUIREMENTS:
                                 break
                         if import_err:
                             break
+                import_err = ""
+                if chk.returncode == 0:
+                    for _imp in _re.finditer(r'import\s*\{([^}]+)\}\s*from\s*["\'](engine/[^"\']+)["\']', code):
+                        _mod_path = os.path.join("3d-video-studio", _imp.group(2))
+                        if not os.path.exists(_mod_path):
+                            import_err = f"Module not found: {_imp.group(2)}"
+                            break
+                        _mod_txt = open(_mod_path, encoding="utf-8").read()
+                        for _sym in [x.strip().split(" as ")[0].strip() for x in _imp.group(1).split(",") if x.strip()]:
+                            if not _re.search(rf'\bexport\s+(?:function|const|let|var|class)\s+{_sym}\b|\bexport\s*\{{[^}}]*\b{_sym}\b', _mod_txt):
+                                import_err = f"The requested module \'{_imp.group(2)}\' does not provide an export named \'{_sym}\'"
+                                break
+                        if import_err:
+                            break
                 if chk.returncode == 0 and not import_err and "captionsFromWords" in code and "run(" in code:
                     print(f"SUCCESS: Custom multi-stage video.js passed syntax check ({model})!")
                     return
